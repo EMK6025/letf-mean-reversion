@@ -1,6 +1,6 @@
 import pandas as pd
 from sqlalchemy import text, MetaData, Table, Date, Float, Column
-
+import numpy as np
 
 def update_sql_table(df, engine, input_name, table_name="test_data"):
     '''
@@ -15,9 +15,16 @@ def update_sql_table(df, engine, input_name, table_name="test_data"):
     df_db.update(df)
 
     # add new rows that aren’t already present
-    temp = df[~df.index.isin(df_db.index)]
+    temp = df[~df.index.isin(df_db.index)].copy()
+    for col in df_db.columns:
+        if col not in temp.columns:
+            temp[col] = np.nan
+    temp = temp[df_db.columns]
+
     if df_db.empty:
         df_combined = temp
+    elif temp.empty:
+        df_combined = df_db
     else:
         df_combined = pd.concat([df_db, temp])
 
@@ -26,7 +33,7 @@ def update_sql_table(df, engine, input_name, table_name="test_data"):
     df_combined.to_sql(f"{table_name}", engine, if_exists="replace", index=False)
 
     with engine.connect() as conn:
-        conn.execute(text(f"ALTER TABLE {table_name} ADD PRIMARY KEY (Date)"))
+        conn.execute(text(f'ALTER TABLE {table_name} ADD PRIMARY KEY ("Date")'))
     
     print(f"{table_name} successfully updated with {input_name} data.\n")
 
