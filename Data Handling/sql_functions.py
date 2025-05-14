@@ -69,7 +69,7 @@ def reset(engine):
     data = Table( 
         "data", metadata,
         Column("Date", Date, primary_key=True),
-        Column("RF_Rate", Float),
+        Column("RF Rate", Float),
         Column("SPXTR Change", Float),
         Column("2x LETF Change", Float),
         Column("3x LETF Change", Float),
@@ -97,7 +97,7 @@ def reset(engine):
     test_data = Table( 
         "test_data", metadata,
         Column("Date", Date, primary_key=True),
-        Column("RF_Rate", Float),
+        Column("RF Rate", Float),
         Column("SPXTR Change", Float),
         Column("2x LETF Change", Float),
         Column("3x LETF Change", Float),
