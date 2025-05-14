@@ -28,6 +28,10 @@ def update_sql_table(df, engine, input_name, table_name="test_data"):
     else:
         df_combined = pd.concat([df_db, temp])
 
+    for col in df_combined.columns:
+        if col != "Date":
+            df_combined[col] = pd.to_numeric(df_combined[col], errors="coerce").astype(float)
+
     # rewrite back into sql
     df_combined.reset_index(inplace=True)
     df_combined.to_sql(f"{table_name}", engine, if_exists="replace", index=False)
