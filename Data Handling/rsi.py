@@ -13,11 +13,9 @@ def main():
     for i in range(3,21):
         rsi = vbt.RSI.run(series, window=i, ewm=True)
         df[f"{i} Day RSI"] = rsi.rsi
-        print(f"Finished processing {i} Day RSI\n")
 
-    with pd.option_context('display.max_columns', None):
-        view = df.tail(20)
-        print(view)
+    df.reset_index(inplace=True)  
+    update_sql_table(df, engine, "RSI")
 
     
 if __name__ == "__main__":
