@@ -14,4 +14,4 @@ df = df.rename(columns={
 df["Date"] = pd.to_datetime(df["Date"], dayfirst=False).dt.date
 df['2x LETF Change'] = df['2x LETF Change'].astype(float)
 
-update_sql_table(df, engine)
+update_sql_table(df, engine, "SSO")

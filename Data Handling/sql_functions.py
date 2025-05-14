@@ -2,7 +2,7 @@ import pandas as pd
 from sqlalchemy import text, MetaData, Table, Date, Float, Column
 
 
-def update_sql_table(df, engine, table_name="test_data"):
+def update_sql_table(df, engine, input_name, table_name="test_data"):
     '''
     desc: updates entries in sql table with dataframe input
     in: dataframe df, engine connection, and optional table name defaulting to test_data
@@ -28,7 +28,7 @@ def update_sql_table(df, engine, table_name="test_data"):
     with engine.connect() as conn:
         conn.execute(text(f"ALTER TABLE {table_name} ADD PRIMARY KEY (Date)"))
     
-    print(f"{table_name} successfully updated.\n")
+    print(f"{table_name} successfully updated with {input_name} data.\n")
 
 def clean(engine, table_name="test_data"):
     '''

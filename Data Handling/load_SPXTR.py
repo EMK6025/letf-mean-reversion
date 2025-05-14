@@ -14,4 +14,4 @@ df['Close'] = df['Close'].astype(float)
 df = df.sort_values("Date")
 df["SPXTR Change"] = df["Close"].pct_change() * 100
 
-update_sql_table(df, engine)
+update_sql_table(df, engine, "SPXTR")

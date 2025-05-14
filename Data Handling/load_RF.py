@@ -14,4 +14,4 @@ df = df.rename(columns={
 df["Date"] = pd.to_datetime(df["Date"], format="%Y%m%d").dt.date
 df['RF_Rate'] = df['RF_Rate'].astype(float)
 
-update_sql_table(df, engine)
+update_sql_table(df, engine, "RF")
