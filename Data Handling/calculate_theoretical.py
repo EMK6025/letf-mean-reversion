@@ -1,7 +1,5 @@
 import pandas as pd
 from engine import connect
-import vectorbt as vbt
-from sql_functions import update_sql_table
 
 def theoretical_return(df, X):
     return df["SPXTR Change"]*X - df["RF Rate"]*(X-1)
@@ -15,15 +13,16 @@ def main():
     df["Theoretical 3x LETF"] = theoretical_return(df, 3)
     temp = df["3x LETF Change"].notna() & df["Theoretical 3x LETF"].notna()
     df.loc[temp, "3x Error"] = ( df["3x LETF Change"] - df["Theoretical 3x LETF"] )
+    error_3x = df.loc[temp, "3x Error"].mean()
     
     df["Theoretical 2x LETF"] = theoretical_return(df, 2)
     temp = df["2x LETF Change"].notna() & df["Theoretical 2x LETF"].notna()
     df.loc[temp, "2x Error"] = ( df["2x LETF Change"] - df["Theoretical 2x LETF"] )
-
-    with pd.option_context('display.max_columns', None):
-        view = df[["SPXTR Change", "3x LETF Change", "Theoretical 3x LETF", "3x Error", "2x LETF Change", "Theoretical 2x LETF", "2x Error"]].tail(10)
-        print(view)
-
+    error_2x = df.loc[temp, "2x Error"].mean()
+    
+    print(f"3x Error is {error_3x}\n")
+    print(f"2x Error is {error_2x}\n")
+    
 if __name__ == "__main__":
     main()
     
