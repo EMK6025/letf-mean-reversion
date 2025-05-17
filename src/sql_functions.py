@@ -130,3 +130,19 @@ def reset(engine):
 
     metadata.create_all(engine)
     print(f"data and test_data have been reset to empty structures.\n")
+
+def show(engine, table_name="test_data"):
+    df = pd.read_sql(f"SELECT * from {table_name}", engine)
+
+    with pd.option_context('display.max_columns', None):
+        print("\n>>> Random 10-row sample:\n")
+        print(df.sample(10))
+
+        print("\n>>> First 5 rows:\n")
+        print(df.head())
+
+        print("\n>>> Last 5 rows:\n")
+        print(df.tail())
+
+        print("\n>>> Summary statistics:\n")
+        print(df.describe())
