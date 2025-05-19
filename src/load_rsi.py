@@ -1,13 +1,13 @@
 import pandas as pd
 import numpy as np
-from engine import connect
+from engine import create_engine, connect
 import vectorbt as vbt
 from sql_functions import update_sql_table
 
 
 def main():
-    engine = connect()
-    df = pd.read_sql("SELECT * FROM test_data", engine)
+    engine = create_engine()
+    df = connect(engine, "test_data")
     df.set_index("Date", inplace=True)
     df.sort_index(inplace=True)
     series = pd.to_numeric(df["SPX Close"], errors="coerce").astype(float)

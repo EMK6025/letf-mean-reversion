@@ -1,12 +1,12 @@
 import pandas as pd
-from engine import connect
+from engine import create_engine, connect
 
 def theoretical_return(df, X):
     return df["SPXTR Change"]*X - df["RF Rate"]*(X-1)
 
 def main():
-    engine = connect()
-    df = pd.read_sql("SELECT * FROM test_data", engine)
+    engine = create_engine()
+    df = connect(engine, "test_data")
     df.set_index("Date", inplace=True)
     df.sort_index(inplace=True)
     
