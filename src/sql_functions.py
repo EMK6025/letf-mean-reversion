@@ -50,11 +50,11 @@ def clean(engine, table_name="test_data"):
     with engine.connect() as conn:
         conn.execute(text(f"""
             DELETE FROM {table_name}
-            WHERE "Date" < '1990-12-31' OR "Date" > '2024-12-31'
+            WHERE "Date" < '1990-11-30' OR "Date" > '2024-12-31'
         """))
         conn.commit()
     
-    print(f"entries in {table_name} before 1990-12-31 and after 2024-12-31 have been removed.\n")
+    print(f"entries in {table_name} before 1990-11-30 and after 2024-12-31 have been removed.\n")
 
 def reset(engine):
     '''
@@ -76,27 +76,30 @@ def reset(engine):
         Column("RF Rate", Float),
         Column("SPXTR Change", Float),
         Column("SPX Close", Float),
+        Column("2x LETF", Float),
+        Column("3x LETF", Float),
+        Column("4x LETF", Float),
         Column("2x LETF Change", Float),
         Column("3x LETF Change", Float),
-        Column("4x LETF Change", Float),
-        Column("3 day RSI", Float),
-        Column("4 day RSI", Float),
-        Column("5 day RSI", Float),
-        Column("6 day RSI", Float),
-        Column("7 day RSI", Float),
-        Column("8 day RSI", Float),
-        Column("9 day RSI", Float),
-        Column("10 day RSI", Float),
-        Column("11 day RSI", Float),
-        Column("12 day RSI", Float),
-        Column("13 day RSI", Float),
-        Column("14 day RSI", Float),
-        Column("15 day RSI", Float),
-        Column("16 day RSI", Float),
-        Column("17 day RSI", Float),
-        Column("18 day RSI", Float),
-        Column("19 day RSI", Float),
-        Column("20 day RSI", Float)
+        Column("4x LETF Change", Float)
+        # Column("3 day RSI", Float),
+        # Column("4 day RSI", Float),
+        # Column("5 day RSI", Float),
+        # Column("6 day RSI", Float),
+        # Column("7 day RSI", Float),
+        # Column("8 day RSI", Float),
+        # Column("9 day RSI", Float),
+        # Column("10 day RSI", Float),
+        # Column("11 day RSI", Float),
+        # Column("12 day RSI", Float),
+        # Column("13 day RSI", Float),
+        # Column("14 day RSI", Float),
+        # Column("15 day RSI", Float),
+        # Column("16 day RSI", Float),
+        # Column("17 day RSI", Float),
+        # Column("18 day RSI", Float),
+        # Column("19 day RSI", Float),
+        # Column("20 day RSI", Float)
     ) 
 
     test_data = Table( 
@@ -105,27 +108,30 @@ def reset(engine):
         Column("RF Rate", Float),
         Column("SPXTR Change", Float),
         Column("SPX Close", Float),
+        Column("2x LETF", Float),
+        Column("3x LETF", Float),
+        Column("4x LETF", Float),
         Column("2x LETF Change", Float),
         Column("3x LETF Change", Float),
-        Column("4x LETF Change", Float),
-        Column("3 Day RSI", Float),
-        Column("4 Day RSI", Float),
-        Column("5 Day RSI", Float),
-        Column("6 Day RSI", Float),
-        Column("7 Day RSI", Float),
-        Column("8 Day RSI", Float),
-        Column("9 Day RSI", Float),
-        Column("10 Day RSI", Float),
-        Column("11 Day RSI", Float),
-        Column("12 Day RSI", Float),
-        Column("13 Day RSI", Float),
-        Column("14 Day RSI", Float),
-        Column("15 Day RSI", Float),
-        Column("16 Day RSI", Float),
-        Column("17 Day RSI", Float),
-        Column("18 Day RSI", Float),
-        Column("19 Day RSI", Float),
-        Column("20 Day RSI", Float)
+        Column("4x LETF Change", Float)
+        # Column("3 Day RSI", Float),
+        # Column("4 Day RSI", Float),
+        # Column("5 Day RSI", Float),
+        # Column("6 Day RSI", Float),
+        # Column("7 Day RSI", Float),
+        # Column("8 Day RSI", Float),
+        # Column("9 Day RSI", Float),
+        # Column("10 Day RSI", Float),
+        # Column("11 Day RSI", Float),
+        # Column("12 Day RSI", Float),
+        # Column("13 Day RSI", Float),
+        # Column("14 Day RSI", Float),
+        # Column("15 Day RSI", Float),
+        # Column("16 Day RSI", Float),
+        # Column("17 Day RSI", Float),
+        # Column("18 Day RSI", Float),
+        # Column("19 Day RSI", Float),
+        # Column("20 Day RSI", Float)
     ) 
 
     metadata.create_all(engine)
