@@ -46,11 +46,11 @@ def apply(price, prelim_entry, prelim_exit, size, sell_threshold):
     size_array is target portfolio percentage
     '''
     
-    print(f"\nprice: {price.shape}")
-    print(f"size: {size.shape}")
-    print(f"sell_threshold: {sell_threshold.shape}")
-    print(f"prelim_entry: {prelim_entry.shape}")
-    print(f"prelim_exit: {prelim_exit.shape}")
+    # price: (T, N)
+    # size: (N, 11)
+    # sell_threshold: (N,)
+    # prelim_entry: (T, N)
+    # prelim_exit: (T, N)
 
     T, N = prelim_entry.shape
 
@@ -77,17 +77,19 @@ def apply(price, prelim_entry, prelim_exit, size, sell_threshold):
         can_buy = prelim_entry[t] & (cur_buy < 10)
         # fresh cycles need to set a new watch price:
         new_cycle = can_buy & (cur_buy == 0)
-        cycle_watch_price[new_cycle] = price[t] * (100.0 - sell_threshold[new_cycle]) / 100.0
+        threshold = price[t] * (100.0 - sell_threshold) / 100.0  
+        cycle_watch_price[new_cycle] = threshold[new_cycle]
+
         # finish
         cur_buy[can_buy] += 1
         size_array[t, can_buy] = size[idx_n[can_buy], cur_buy[can_buy]]
 
         # 4) RSI-exit signals that aren’t high enough → start watching
-        valid_exit = prelim_exit[t] & (cur_buy != 0) & (price[t] >= cycle_watch_price)
+        valid_exit = prelim_exit[t] & ((cur_buy != 0) & (price[t] >= cycle_watch_price))
         invalid_exit = prelim_exit[t] & ~valid_exit
         
         cur_buy[valid_exit] = 0 # reset cycle
-        size_array[t, valid_exit] = size[idx_n[valid_sell], 0]
+        size_array[t, valid_exit] = size[idx_n[valid_exit], 0]
         watching[valid_exit] = False
         cycle_watch_price[valid_exit] = -1
         
@@ -132,9 +134,7 @@ def main():
     entries = np.array([param.entry for param in params])
     exits = np.array([param.exit for param in params])
     position_sizes = np.vstack([param.position_sizing for param in params]) 
-    position_sizes = np.transpose(position_sizes, (1, 0))
-    sell_thresholds = np.array([[param.sell_threshold] for param in params])
-    sell_thresholds = np.transpose(sell_thresholds, (1, 0))
+    sell_thresholds = np.array([param.sell_threshold for param in params])
     
     letf = letf.loc[START:]
     price = price.loc[START:]
@@ -151,25 +151,17 @@ def main():
         {i: parse(exit_mask.iloc[:, i],  windows[i]) 
             for i in range(len(params)) }
     )
-    
-    print(f"Shape of letf: {letf.shape}")
-    print(f"Shape of prelim_entries: {prelim_entries.shape}")
-    print(f"Shape of prelim_exits: {prelim_exits.shape}")
-    print(f"Shape of position_sizes: {position_sizes.shape}")
-    print(f"Shape of sell_thresholds: {sell_thresholds.shape}")
 
-    # indicator = vbt.IndicatorFactory(
-    #     input_names  = ['price', 'prelim_entry', 'prelim_exit'],
-    #     param_names  = ['size', 'sell_threshold'],
-    #     output_names = ['size_array']
-    # ).from_apply_func(
-    #     apply
-    # )
     indicator = vbt.IndicatorFactory(
-        input_names  = ['price', 'prelim_entry', 'prelim_exit', 'size', 'sell_threshold'],
+        input_names = ['price', 'prelim_entry', 'prelim_exit'],
+        param_names = ['size', 'sell_threshold'],
         output_names = ['size_array']
     ).from_apply_func(
-        apply
+        apply,
+        param_settings={ # vectorize param_names 
+            'size': dict(is_array_like=True),
+            'sell_threshold': dict(is_array_like=True)
+        }
     )
 
     ind = indicator.run(
@@ -179,10 +171,6 @@ def main():
         size            = position_sizes,
         sell_threshold  = sell_thresholds
     )
-    
-    # orders = target_pct.copy()
-    # orders[target_pct.eq(target_pct.shift())] = np.nan
-    # orders.iloc[0] = target_pct.iloc[0]
     
     target_pct = ind.size_array
     
