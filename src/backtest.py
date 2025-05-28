@@ -1,7 +1,12 @@
+print("importing panda")
 import pandas as pd
+print("importing custom emgine program")
 from engine import create_engine, connect
+print("importing numpy")
 import numpy as np
-import vectorbt as vbt
+print("importing vectorbt")
+from vectorbt import Portfolio, RSI, IndicatorFactory
+print("importing dataclasses and datetime")
 from dataclasses import dataclass, field
 import datetime
 
@@ -20,9 +25,6 @@ class Params:
                 f"position_sizing must have 11 elements (1 base value and 10 entries), not {arr.shape}"
             )
         self.position_sizing = arr
-
-import numpy as np
-import pandas as pd
 
 def parse(input: pd.Series, wait: int) -> pd.Series: # cooldown period
     arr = input.values.astype(bool)
@@ -85,8 +87,9 @@ def apply(price, prelim_entry, prelim_exit, size, sell_threshold):
         size_array[t, can_buy] = size[idx_n[can_buy], cur_buy[can_buy]]
 
         # 4) RSI-exit signals that aren’t high enough → start watching
-        valid_exit = prelim_exit[t] & ((cur_buy != 0) & (price[t] >= cycle_watch_price))
-        invalid_exit = prelim_exit[t] & ~valid_exit
+        has_position = cur_buy > 0
+        valid_exit = prelim_exit[t] & has_position & (price[t] >= cycle_watch_price)
+        invalid_exit = prelim_exit[t] & ~valid_exit & has_position
         
         cur_buy[valid_exit] = 0 # reset cycle
         size_array[t, valid_exit] = size[idx_n[valid_exit], 0]
@@ -100,6 +103,7 @@ def apply(price, prelim_entry, prelim_exit, size, sell_threshold):
 START = "1989-12-31"
 
 def main():
+    print("starting main()")
     engine = create_engine()
     df = connect(engine, "test_data")
     df['Date'] = pd.to_datetime(df['Date'])
@@ -107,8 +111,10 @@ def main():
     df.sort_index(inplace=True)
     price = df["SPX Close"]
     letf = df["3x LETF"]
+    print("database read and processed")
+    print("grabbed input")
     
-    param1 = Params(
+    param0 = Params(
         window=5,
         entry=20,
         exit=70,
@@ -116,21 +122,22 @@ def main():
         position_sizing = [.2, .6, .8, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     )
     
-    param2 = Params(
+    param1 = Params(
         window=5,
-        entry=20,
-        exit=70,
+        entry=30,
+        exit=80,
         sell_threshold=10,
-        position_sizing = [0, .3, .6, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        position_sizing = [.2, .4, .6, .8, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     )
     
-    params = [param1, param2]
+    params = [param0, param1]
     window_range = np.arange(3, 21)
-    rsi = vbt.RSI.run(price, window=window_range, ewm=True)
+    rsi = RSI.run(price, window=window_range, ewm=True)
     windows = np.array([param.window for param in params])
     idx = [(w, True) for w in windows]
     rsi_data = rsi.rsi.loc[START:, idx]
-    
+    print("inputs processed")
+        
     entries = np.array([param.entry for param in params])
     exits = np.array([param.exit for param in params])
     position_sizes = np.vstack([param.position_sizing for param in params]) 
@@ -151,8 +158,9 @@ def main():
         {i: parse(exit_mask.iloc[:, i],  windows[i]) 
             for i in range(len(params)) }
     )
+    print("indicator inputs processed")
 
-    indicator = vbt.IndicatorFactory(
+    indicator = IndicatorFactory(
         input_names = ['price', 'prelim_entry', 'prelim_exit'],
         param_names = ['size', 'sell_threshold'],
         output_names = ['size_array']
@@ -163,7 +171,7 @@ def main():
             'sell_threshold': dict(is_array_like=True)
         }
     )
-
+    print("running indicator...")
     ind = indicator.run(
         price           = letf,
         prelim_entry    = prelim_entries,
@@ -171,31 +179,44 @@ def main():
         size            = position_sizes,
         sell_threshold  = sell_thresholds
     )
+    print("indicator ran")
+    target_pct = ind.size_array.to_numpy()
+
+    orders = pd.DataFrame(
+        target_pct,
+        index=price.index,
+        columns=[f"param_{i}" for i in range(target_pct.shape[1])]
+    )
+    mask = orders.eq(orders.shift(axis=0))
+    orders_masked = orders.mask(mask)
+    orders_masked.iloc[0, :] = orders.iloc[0, :]
+    size_changes = orders_masked.to_numpy()
     
-    target_pct = ind.size_array
-    
-    orders = pd.DataFrame(target_pct,
-                    index=[f"param_{i}" for i in range(len(params))],
-                    columns=price.index)
-    
-    mask = orders.eq(orders.shift(axis=1))
-    orders = orders.mask(mask)
-    orders.iloc[:, 0] = target_pct[:, 0] # ensure first‐bar orders
-    
-    pf = vbt.Portfolio.from_orders(
+    pf = Portfolio.from_orders(
         close      = letf,
-        size       = orders,
+        size       = size_changes,
         size_type  = 'targetpercent',
         freq       = '1D'
     )
+
+    base = Portfolio.from_holding(
+        close      = price,
+        freq       = '1D'
+    )
     
-    print(pf.stats())
-    # fig = pf.plot()
-    # fig.show()
-    # exit_trades = pf.exit_trades
-    # et_df = exit_trades.records_readable  
-    # trade_85 = et_df.loc[85] 
-    # print(trade_85)
+    base_3x = Portfolio.from_holding(
+        close      = letf, 
+        freq       = '1D'
+    )
+    
+    inp = pf[0]
+    print(inp.stats())
+    print("base SPXT")
+    print(base.stats())
+    print(base_3x.stats())
+    fig = base.plot()
+    fig.show()
 
 if __name__ == "__main__":
     main()
+    
