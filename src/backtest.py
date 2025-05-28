@@ -8,6 +8,7 @@ print("importing vectorbt")
 from vectorbt import Portfolio, RSI, IndicatorFactory
 print("importing dataclasses and datetime")
 from dataclasses import dataclass, field
+import matplotlib.pyplot as plt
 
 @dataclass
 class Params:
@@ -203,18 +204,17 @@ def main():
         freq       = '1D'
     )
     
-    base_3x = Portfolio.from_holding(
-        close      = letf, 
-        freq       = '1D'
-    )
-    
     inp = pf[0]
-    print(inp.stats())
-    print("base SPXT")
-    print(base.stats())
-    print(base_3x.stats())
-    fig = base.plot()
-    fig.show()
+    base_val = base.value()
+    strat = inp.value()
+    combined = pd.DataFrame({
+        'SPXTR': base_val,
+        'sample strategy': strat
+    })
+    combined.plot(figsize=(12, 6), title='Sample Test')
+    plt.ylabel('Portfolio Value')
+    plt.grid(True)
+    plt.show()
 
 if __name__ == "__main__":
     main()
