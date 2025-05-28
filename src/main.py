@@ -3,7 +3,7 @@ import pandas as pd
 from engine import create_engine, connect
 
 def repopulate_test_data():
-    import load_RF, load_SPXTR, load_SPX, load_SSO, load_UPRO, load_rsi, populate_change, populate_letf
+    import load_RF, load_SPXTR, load_SPX, load_SSO, load_UPRO, populate_change, populate_letf
     engine = create_engine()
     reset(engine)
     load_RF.main()
