@@ -8,7 +8,6 @@ print("importing vectorbt")
 from vectorbt import Portfolio, RSI, IndicatorFactory
 print("importing dataclasses and datetime")
 from dataclasses import dataclass, field
-import datetime
 
 @dataclass
 class Params:
