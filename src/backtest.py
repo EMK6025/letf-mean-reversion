@@ -1,12 +1,7 @@
-print("importing panda")
 import pandas as pd
-print("importing custom emgine program")
 from engine import create_engine, connect
-print("importing numpy")
 import numpy as np
-print("importing vectorbt")
 from vectorbt import Portfolio, RSI, IndicatorFactory
-print("importing dataclasses and datetime")
 from dataclasses import dataclass, field
 import matplotlib.pyplot as plt
 
@@ -100,10 +95,8 @@ def apply(price, prelim_entry, prelim_exit, size, sell_threshold):
 
     return size_array
 
-START = "1989-12-31"
-
-def main():
-    print("starting main()")
+def run(params, start_date, end_date):
+    print("starting run")
     engine = create_engine()
     df = connect(engine, "test_data")
     df['Date'] = pd.to_datetime(df['Date'])
@@ -111,40 +104,20 @@ def main():
     df.sort_index(inplace=True)
     price = df["SPX Close"]
     letf = df["3x LETF"]
-    print("database read and processed")
-    print("grabbed input")
     
-    param0 = Params(
-        window=5,
-        entry=20,
-        exit=70,
-        sell_threshold=10,
-        position_sizing = [.2, .6, .8, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-    )
-    
-    param1 = Params(
-        window=5,
-        entry=30,
-        exit=80,
-        sell_threshold=10,
-        position_sizing = [.2, .4, .6, .8, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-    )
-    
-    params = [param0, param1]
     window_range = np.arange(3, 21)
     rsi = RSI.run(price, window=window_range, ewm=True)
     windows = np.array([param.window for param in params])
     idx = [(w, True) for w in windows]
-    rsi_data = rsi.rsi.loc[START:, idx]
-    print("inputs processed")
+    rsi_data = rsi.rsi.loc[start_date:end_date, idx]
         
     entries = np.array([param.entry for param in params])
     exits = np.array([param.exit for param in params])
     position_sizes = np.vstack([param.position_sizing for param in params]) 
     sell_thresholds = np.array([param.sell_threshold for param in params])
     
-    letf = letf.loc[START:]
-    price = price.loc[START:]
+    letf = letf.loc[start_date:end_date]
+    price = price.loc[start_date:end_date]
     
     entry_mask = rsi_data < entries
     exit_mask = rsi_data > exits
@@ -158,7 +131,6 @@ def main():
         {i: parse(exit_mask.iloc[:, i],  windows[i]) 
             for i in range(len(params)) }
     )
-    print("indicator inputs processed")
 
     indicator = IndicatorFactory(
         input_names = ['price', 'prelim_entry', 'prelim_exit'],
@@ -171,7 +143,6 @@ def main():
             'sell_threshold': dict(is_array_like=True)
         }
     )
-    print("running indicator...")
     ind = indicator.run(
         price           = letf,
         prelim_entry    = prelim_entries,
@@ -179,7 +150,6 @@ def main():
         size            = position_sizes,
         sell_threshold  = sell_thresholds
     )
-    print("indicator ran")
     target_pct = ind.size_array.to_numpy()
 
     orders = pd.DataFrame(
@@ -198,24 +168,5 @@ def main():
         size_type  = 'targetpercent',
         freq       = '1D'
     )
-
-    base = Portfolio.from_holding(
-        close      = price,
-        freq       = '1D'
-    )
     
-    inp = pf[0]
-    base_val = base.value()
-    strat = inp.value()
-    combined = pd.DataFrame({
-        'SPXTR': base_val,
-        'sample strategy': strat
-    })
-    combined.plot(figsize=(12, 6), title='Sample Test')
-    plt.ylabel('Portfolio Value')
-    plt.grid(True)
-    plt.show()
-
-if __name__ == "__main__":
-    main()
-    
+    return pf
