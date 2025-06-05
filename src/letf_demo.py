@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 START = "2000-01-01"
 
 def main():
-    print("starting main()")
     engine = create_engine()
     df = connect(engine, "test_data")
     df['Date'] = pd.to_datetime(df['Date'])
