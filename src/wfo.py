@@ -4,6 +4,14 @@ from backtest import Params
 from engine import create_engine, connect
 from vectorbt import Portfolio
 import numpy as np
+import matplotlib.pyplot as plt
+import vectorbt as vbt
+import warnings
+from deap import fitness
+
+
+warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
+vbt.settings.array_wrapper['freq'] = '1D'
 
 param0 = Params(
     window=5,
@@ -37,18 +45,40 @@ params = [param0, param1]
 
 pfs = backtest.run(params, "1989-12-31", "2020-12-31")
 
-benchmark_return = base.returns
-for pf in pfs:
-    max_drawdown = pf.stats()['Max Drawdown [%]']
-    returns = pf.returns
+benchmark_return = base.returns()
 
-    # Calculate Sortino Ratio with custom MAR
-    excess_returns = returns - benchmark_return
-    downside_returns = excess_returns[excess_returns < 0]
-    mean_excess_return = excess_returns.mean()
-    downside_deviation = downside_returns.std(ddof=1)
+# Omega ratio compares average gains over average losses
+def omega_ratio(returns, benchmark):
+    excess_returns = returns.sub(benchmark, axis=0)
+    gains = excess_returns.clip(lower=0)
+    losses = excess_returns.clip(upper=0)
+    if losses.sum() == 0:
+        return np.inf  # no downside
+    mean_gains  = gains.mean(axis=0)
+    mean_losses  = losses.mean(axis=0).abs()
+    return mean_gains / mean_losses.replace(0, np.nan)
+    
+returns = pfs.returns()
+sortino = returns.vbt.returns.sortino_ratio(required_return=0.000195)
+omega = omega_ratio(returns, benchmark_return)
+relative_drawdowns = base.max_drawdown() / pfs.max_drawdown()
+alpha = pfs.annualized_return() - base.annualized_return()
 
-    # Compute Sortino Ratio
-    sortino = mean_excess_return / downside_deviation if downside_deviation != 0 else np.nan
-    print(f"max drawdown: {max_drawdown}")
-    print(f"sortino with SPX as benchmark: {sortino}")
+fitness_value = fitness(sortino, omega, relative_drawdowns, alpha)
+
+print(fitness_value)
+
+# etf1_value = base.value()
+# strat1 = pfs.iloc[0].value()
+# strat2 = pfs.iloc[1].value()
+
+# combined = pd.DataFrame({
+#     '1x': etf1_value,
+#     'strat1': strat1,
+#     'strat2': strat2,
+# })
+
+# combined.plot(figsize=(12, 6), title='Simulated LETF Performance')
+# plt.ylabel('Portfolio Value')
+# plt.grid(True)
+# plt.show()
