@@ -168,5 +168,4 @@ def run(params, start_date, end_date):
         size_type  = 'targetpercent',
         freq       = '1D'
     )
-    
     return pf

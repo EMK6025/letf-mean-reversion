@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import vectorbt as vbt
 import warnings
-from deap import fitness
+from go import fitness
 
 
 warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
@@ -52,8 +52,6 @@ def omega_ratio(returns, benchmark):
     excess_returns = returns.sub(benchmark, axis=0)
     gains = excess_returns.clip(lower=0)
     losses = excess_returns.clip(upper=0)
-    if losses.sum() == 0:
-        return np.inf  # no downside
     mean_gains  = gains.mean(axis=0)
     mean_losses  = losses.mean(axis=0).abs()
     return mean_gains / mean_losses.replace(0, np.nan)
