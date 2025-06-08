@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import vectorbt as vbt
 from deap import base, creator, tools
+import random
 import warnings
 import math
 
@@ -22,16 +23,63 @@ SORTINO_WEIGHT = 30
 OMEGA_WEIGHT = 30
 ALPHA_WEIGHT = 40
 
-# def fitness(sortino, omega, relative_drawdowns, alpha):
-#     if sortino < SORTINO_THRESHOLD or omega < OMEGA_THRESHOLD or relative_drawdowns < DRAWDOWN_THRESHOLD:
-#         return (-1000,) # failure, kick immediately
-    
-#     norm_sortino = (min(sortino, 3) - SORTINO_THRESHOLD) * SORTINO_WEIGHT / (3 - SORTINO_THRESHOLD)
-#     norm_omega = (min(omega, 3) - OMEGA_THRESHOLD) * OMEGA_WEIGHT / (3 - OMEGA_THRESHOLD)
-#     norm_alpha = 1 / (1 + math.exp(-ALPHA_SCALING * (alpha - ALPHA_THRESHOLD))) * ALPHA_WEIGHT
+# Parameter ranges for randomization
+WINDOW_MIN, WINDOW_MAX = 3, 20
+ENTRY_MIN, ENTRY_MAX = 0, 50
+EXIT_MIN, EXIT_MAX = 50,100
+SELL_THRESH_MIN, SELL_THRESH_MAX = 0,100
+POS_SIZE_MIN, POS_SIZE_MAX = 0.0, 1.0
 
-#     return ((norm_sortino + norm_omega + norm_alpha) * (relative_drawdowns),)
+# DEAP setup
+creator.create("FitnessMax", base.Fitness, weights=(1.0,))
+creator.create("Individual", list, fitness=creator.FitnessMax)
 
+toolbox = base.Toolbox()
+
+# Attribute generators for randomization
+toolbox.register("attr_window", random.randint, WINDOW_MIN, WINDOW_MAX)
+toolbox.register("attr_entry", random.randint, ENTRY_MIN, ENTRY_MAX)
+toolbox.register("attr_exit", random.randint, EXIT_MIN, EXIT_MAX)
+toolbox.register("attr_sell_thresh", random.randint, SELL_THRESH_MIN, SELL_THRESH_MAX)
+toolbox.register("attr_pos_size", random.uniform, POS_SIZE_MIN, POS_SIZE_MAX)
+
+# Load data once for efficiency
+engine = create_engine()
+df = connect(engine, "test_data")
+df['Date'] = pd.to_datetime(df['Date'])
+df.set_index("Date", inplace=True)
+df.sort_index(inplace=True)
+spxt = df["SPX Close"]
+benchmark = Portfolio.from_holding(close=spxt, freq='1D')
+benchmark_returns = benchmark.returns()
+
+# Function to create a single individual (strategy parameters)
+def create_individual():
+    ind = [
+        toolbox.attr_window(),
+        toolbox.attr_entry(),
+        toolbox.attr_exit(),
+        toolbox.attr_sell_thresh(),
+    ]
+    pos = sorted([toolbox.attr_pos_size() for _ in range(11)])
+    ind.extend(pos)
+    return ind
+
+toolbox.register("individual", tools.initIterate, creator.Individual, create_individual)
+toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+toolbox.register("mate", tools.cxTwoPoint)
+toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=1, indpb=0.1)
+toolbox.register("select", tools.selTournament, tournsize=3)
+# Omega ratio function (from wfo.py)
+def omega_ratio(returns, benchmark):
+    excess_returns = returns.sub(benchmark, axis=0)
+    gains = excess_returns.clip(lower=0)
+    losses = excess_returns.clip(upper=0)
+    mean_gains = gains.mean(axis=0)
+    mean_losses = losses.mean(axis=0).abs()
+    return mean_gains / mean_losses.replace(0, np.nan)
+
+# Existing fitness function
 def fitness(sortino, omega, relative_drawdowns, alpha):
     fail_mask = (sortino < SORTINO_THRESHOLD) | (omega < OMEGA_THRESHOLD) | (relative_drawdowns < DRAWDOWN_THRESHOLD)
     
@@ -39,186 +87,95 @@ def fitness(sortino, omega, relative_drawdowns, alpha):
     norm_omega = (np.minimum(omega, 3) - OMEGA_THRESHOLD) * OMEGA_WEIGHT / (3 - OMEGA_THRESHOLD)
     norm_alpha = 1 / (1 + np.exp(-ALPHA_SCALING * (alpha - ALPHA_THRESHOLD))) * ALPHA_WEIGHT
 
-    fitness = (norm_sortino + norm_omega + norm_alpha) * (relative_drawdowns)
-    print("sortino: ", sortino)
-    print("omega: ", omega)
-    print("relative_drawdowns: ", relative_drawdowns)
-    print("alpha: ", alpha)
-    print("  ")
+    fitness_val = (norm_sortino + norm_omega + norm_alpha) * (relative_drawdowns)
     
-    fitness[fail_mask] = -1000
-    return list(zip(fitness))
+    fitness_val[fail_mask] = -1000
+    return list(zip(fitness_val))
+
+# Evaluate a population
+def evaluate(pop, start_date, end_date):
+    params = []
+    for individual in pop:
+        window, entry, exit_, sell_threshold, *pos_sizing = individual
+        params.append(Params(
+            window=window,
+            entry=entry,
+            exit=exit_,
+            sell_threshold=sell_threshold,
+            position_sizing=np.array(pos_sizing)
+        ))
     
+    pfs = backtest.run(params, start_date, end_date)
+    
+    returns = pfs.returns()
+    
+    sortino  = returns.vbt.returns.sortino_ratio(required_return=0.000195)
+    omega    = omega_ratio(returns, benchmark_returns)
+    drawdown = benchmark.max_drawdown() / pfs.max_drawdown()
+    alpha    = pfs.annualized_return() - benchmark.annualized_return()
+    
+    fitness_vals = fitness(sortino, omega, drawdown, alpha) 
+    return fitness_vals
 
-def temp():
-    def evaluate_strategy(individual):
-        # Example: individual = [fast_ma, slow_ma, stop_loss]
-        params = {
-            "fast_ma": individual[0],
-            "slow_ma": individual[1],
-            "stop_loss": individual[2],
-        }
-        
-        # Run vectorbt backtest
-        result = run_vectorbt_backtest(params)
-        
-        # Extract fitness (maximize Sortino for example)
-        fitness = result.sortino_ratio
-        
-        return (fitness,)  # Must return a tuple!
-
-    # Maximize fitness
-    creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-    creator.create("Individual", list, fitness=creator.FitnessMax)
-
-    toolbox = base.Toolbox()
-
-    # Define individual with 3 parameters as floats
-    toolbox.register("attr_float", random.uniform, 5, 100)  # Change range as needed
-    toolbox.register("individual", tools.initRepeat, creator.Individual, toolbox.attr_float, n=3)
-    toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-
-    # Register evaluation function
-    toolbox.register("evaluate", evaluate_strategy)
-
-    # Register genetic operators
-    toolbox.register("mate", tools.cxBlend, alpha=0.5)
-    toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=5, indpb=0.2)
-    toolbox.register("select", tools.selTournament, tournsize=3)
-
-    population = toolbox.population(n=50)
-    NGEN = 20
-    CXPB, MUTPB = 0.5, 0.2
-
-    for gen in range(NGEN):
-        # Evaluate fitness
-        fitnesses = list(map(toolbox.evaluate, population))
-        for ind, fit in zip(population, fitnesses):
-            ind.fitness.values = fit
-
-        # Select, clone, and apply genetic ops
-        offspring = toolbox.select(population, len(population))
-        offspring = list(map(toolbox.clone, offspring))
-
-        # Apply crossover and mutation
-        for child1, child2 in zip(offspring[::2], offspring[1::2]):
-            if random.random() < CXPB:
-                toolbox.mate(child1, child2)
-                del child1.fitness.values, child2.fitness.values
-
-        for mutant in offspring:
-            if random.random() < MUTPB:
-                toolbox.mutate(mutant)
-                del mutant.fitness.values
-
-        # Evaluate the new offspring (only those with invalid fitness)
-        invalid_inds = [ind for ind in offspring if not ind.fitness.valid]
-        fitnesses = map(toolbox.evaluate, invalid_inds)
-        for ind, fit in zip(invalid_inds, fitnesses):
-            ind.fitness.values = fit
-
-        # Replace old population
-        population[:] = offspring
-
-    def init_param_1():
-        return random.uniform(3, 20)  # Param 1: float in [3, 20]
-
-    def init_param_2():
-        return random.uniform(0, 100)  # Param 2: float in [0, 100]
-
-    def init_param_3_array():
-        # Param 3: increasing array of 10 values in [0, 1]
-        values = sorted([random.uniform(0, 1.0) for _ in range(10)])
-        return values
-
-    from deap import creator, base, tools
-
-    creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-    creator.create("Individual", list, fitness=creator.FitnessMax)
-
-    toolbox = base.Toolbox()
-
-    def init_individual():
-        p1 = init_param_1()
-        p2 = init_param_2()
-        p3 = init_param_3_array()
-        return creator.Individual([p1, p2, p3])
-
-    toolbox.register("individual", init_individual)
-    toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-
-    def custom_mutate(individual, indpb=0.2):
-        # Mutate param 1 (index 0): float between 3 and 20
-        if random.random() < indpb:
-            individual[0] = min(20, max(3, individual[0] + random.gauss(0, 1)))
-
-        # Mutate param 2 (index 1): float between 0 and 100
-        if random.random() < indpb:
-            individual[1] = min(100, max(0, individual[1] + random.gauss(0, 5)))
-
-        # Mutate param 3 (index 2): 10-length increasing array in [0, 1]
-        if random.random() < indpb:
-            new_array = individual[2][:]
-            for i in range(len(new_array)):
-                if random.random() < 0.5:
-                    change = random.gauss(0, 0.05)
-                    new_array[i] = min(1.0, max(0.0, new_array[i] + change))
-            new_array = sorted(new_array)
-            individual[2] = new_array
-
-        return (individual,)
-
-    toolbox.register("mutate", custom_mutate)
-
-
-    import random
-    from deap import tools
-
-    # Parameters
-    POP_SIZE = 50
-    NGEN = 20
-    CXPB = 0.5  # Crossover probability
-    MUTPB = 0.2  # Mutation probability
-
-    # Initialize population
-    population = toolbox.population(n=POP_SIZE)
-
-    # Evaluate initial population
-    fitnesses = list(map(toolbox.evaluate, population))
-    for ind, fit in zip(population, fitnesses):
+# Function to generate initial population, run backtests, and print fitness scores
+def run_initial_population(pop_size=50, start_date="1989-12-31", end_date="2020-12-31"):
+    
+    # Generate population
+    pop = toolbox.population(n=pop_size)
+    
+    # Evaluate fitness for each individual
+    print(f"Evaluating initial population of {pop_size} strategies...")
+    fitnesses = evaluate(pop, start_date, end_date)
+    
+    for ind, fit in zip(pop, fitnesses):
         ind.fitness.values = fit
 
-    # Start evolution
-    for gen in range(NGEN):
-        print(f"-- Generation {gen} --")
+    # Print results
+    print("\nInitial Population Fitness Scores:")
+    for i, ind in enumerate(pop):
+        print(f"Strategy {i}: Fitness = {ind.fitness.values[0]:.4f}")
+        print(f"  Params: window={ind[0]}, entry={ind[1]}, exit={ind[2]}, sell_threshold={ind[3]}")
+        print(f"  Position Sizing: {[round(x, 3) for x in ind[4:15]]}\n")
+    
+    return pop
 
-        # Select next generation individuals
-        offspring = toolbox.select(population, len(population))
-        offspring = list(map(toolbox.clone, offspring))
-
-        # Apply crossover
-        for child1, child2 in zip(offspring[::2], offspring[1::2]):
-            if random.random() < CXPB:
-                toolbox.mate(child1, child2)
-                del child1.fitness.values
-                del child2.fitness.values
-
-        # Apply mutation
-        for mutant in offspring:
-            if random.random() < MUTPB:
-                toolbox.mutate(mutant)
-                del mutant.fitness.values
-
-        # Re-evaluate individuals with invalid fitness
-        invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
-        fitnesses = map(toolbox.evaluate, invalid_ind)
-        for ind, fit in zip(invalid_ind, fitnesses):
-            ind.fitness.values = fit
-
-        # Replace old population
-        population[:] = offspring
-
-        # Log best individual
-        top1 = tools.selBest(population, 1)[0]
-        print("Best individual:", top1)
-        print("Fitness:", top1.fitness.values[0])
+# Function to create the next generation
+def create_next_generation(population, cx_prob=0.5, mut_prob=0.2):
+    """
+    Takes the current population and their fitness scores, then generates the next
+    generation using selection, crossover, and mutation.
+    
+    Args:
+        population: List of DEAP individuals with fitness values
+        cx_prob: Probability of crossover (default 0.5)
+        mut_prob: Probability of mutation (default 0.2)
+    
+    Returns:
+        List of individuals representing the next generation
+    """
+    
+    # Select parents and clone them to create offspring
+    offspring = toolbox.select(population, len(population))
+    offspring = list(map(toolbox.clone, offspring))
+    
+    # Apply crossover
+    for child1, child2 in zip(offspring[::2], offspring[1::2]):
+        if random.random() < cx_prob:
+            toolbox.mate(child1, child2)
+            del child1.fitness.values
+            del child2.fitness.values
+    
+    # Apply mutation
+    for mutant in offspring:
+        if random.random() < mut_prob:
+            toolbox.mutate(mutant)
+            # Clamp values to valid ranges
+            mutant[0] = max(WINDOW_MIN, min(WINDOW_MAX, int(round(mutant[0]))))
+            mutant[1] = max(ENTRY_MIN, min(ENTRY_MAX, int(round(mutant[1]))))
+            mutant[2] = max(EXIT_MIN, min(EXIT_MAX, int(round(mutant[2]))))
+            mutant[3] = max(SELL_THRESH_MIN, min(SELL_THRESH_MAX, int(round(mutant[3]))))
+            for i in range(4, 15):
+                mutant[i] = max(POS_SIZE_MIN, min(POS_SIZE_MAX, mutant[i]))
+            del mutant.fitness.values
+    
+    return offspring

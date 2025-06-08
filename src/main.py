@@ -23,4 +23,3 @@ df = connect(engine, "test_data")
 with pd.option_context('display.max_columns', None):
     print("\n>>> Random 10-row sample:\n")
     print(df.sample(10))
-# show(engine)
