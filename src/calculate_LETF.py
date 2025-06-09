@@ -16,12 +16,6 @@ def main():
     letf_2x = theoretical_return(df["2x LETF Change"], 2)
     letf_3x = theoretical_return(df["3x LETF Change"], 2)
     letf_4x = theoretical_return(df["4x LETF Change"], 2)
-
-    
-    print(f"3x Error is {error_3x}\n")
-    print(f"2x Error is {error_2x}\n")
     
 if __name__ == "__main__":
     main()
-    
-    

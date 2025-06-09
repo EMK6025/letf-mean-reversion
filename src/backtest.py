@@ -33,7 +33,6 @@ def parse(input: pd.Series, wait: int) -> pd.Series: # cooldown period
         else:
             i += 1
     return pd.Series(out, index=input.index)
-
             
 def apply(price, prelim_entry, prelim_exit, size, sell_threshold):
     '''
