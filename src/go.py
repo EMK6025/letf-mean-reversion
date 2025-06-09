@@ -9,7 +9,7 @@ import vectorbt as vbt
 from deap import base, creator, tools
 import random
 import warnings
-import math
+import time
 
 warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
 vbt.settings.array_wrapper['freq'] = '1D'
@@ -92,8 +92,11 @@ def fitness(sortino, omega, relative_drawdowns, alpha):
     fitness_val[fail_mask] = -1000
     return list(zip(fitness_val))
 
-# Evaluate a population
+# # Evaluate a population
 def evaluate(pop, start_date, end_date):
+    # Params conversion
+    t0 = time.time()
+    print(f"[evaluate] Converting {len(pop)} individuals → Params…", end=" ")
     params = []
     for individual in pop:
         window, entry, exit_, sell_threshold, *pos_sizing = individual
@@ -104,18 +107,33 @@ def evaluate(pop, start_date, end_date):
             sell_threshold=sell_threshold,
             position_sizing=np.array(pos_sizing)
         ))
-    
+    print(f"done in {time.time() - t0:.2f}s")
+
+    # Backtest
+    t1 = time.time()
+    print(f"[evaluate] Running backtest.run()…", end=" ")
     pfs = backtest.run(params, start_date, end_date)
-    
+    print(f"done in {time.time() - t1:.2f}s")
+
+    # Metrics
+    t2 = time.time()
+    print(f"[evaluate] Computing returns & metrics…", end=" ")
     returns = pfs.returns()
-    
     sortino  = returns.vbt.returns.sortino_ratio(required_return=0.000195)
     omega    = omega_ratio(returns, benchmark_returns)
     drawdown = benchmark.max_drawdown() / pfs.max_drawdown()
     alpha    = pfs.annualized_return() - benchmark.annualized_return()
-    
-    fitness_vals = fitness(sortino, omega, drawdown, alpha) 
+    print(f"done in {time.time() - t2:.2f}s")
+
+    # Fitness
+    t3 = time.time()
+    print(f"[evaluate] Calculating fitness…", end=" ")
+    fitness_vals = fitness(sortino, omega, drawdown, alpha)
+    print(f"done in {time.time() - t3:.2f}s")
+
+    print(f"[evaluate] TOTAL {time.time() - t0:.2f}s\n")
     return fitness_vals
+
 
 # Function to generate initial population, run backtests, and print fitness scores
 def run_initial_population(pop_size=50, start_date="1989-12-31", end_date="2020-12-31"):
