@@ -82,24 +82,6 @@ def reset(engine):
         Column("2x LETF Change", Float),
         Column("3x LETF Change", Float),
         Column("4x LETF Change", Float)
-        # Column("3 day RSI", Float),
-        # Column("4 day RSI", Float),
-        # Column("5 day RSI", Float),
-        # Column("6 day RSI", Float),
-        # Column("7 day RSI", Float),
-        # Column("8 day RSI", Float),
-        # Column("9 day RSI", Float),
-        # Column("10 day RSI", Float),
-        # Column("11 day RSI", Float),
-        # Column("12 day RSI", Float),
-        # Column("13 day RSI", Float),
-        # Column("14 day RSI", Float),
-        # Column("15 day RSI", Float),
-        # Column("16 day RSI", Float),
-        # Column("17 day RSI", Float),
-        # Column("18 day RSI", Float),
-        # Column("19 day RSI", Float),
-        # Column("20 day RSI", Float)
     ) 
 
     test_data = Table( 
@@ -114,24 +96,6 @@ def reset(engine):
         Column("2x LETF Change", Float),
         Column("3x LETF Change", Float),
         Column("4x LETF Change", Float)
-        # Column("3 Day RSI", Float),
-        # Column("4 Day RSI", Float),
-        # Column("5 Day RSI", Float),
-        # Column("6 Day RSI", Float),
-        # Column("7 Day RSI", Float),
-        # Column("8 Day RSI", Float),
-        # Column("9 Day RSI", Float),
-        # Column("10 Day RSI", Float),
-        # Column("11 Day RSI", Float),
-        # Column("12 Day RSI", Float),
-        # Column("13 Day RSI", Float),
-        # Column("14 Day RSI", Float),
-        # Column("15 Day RSI", Float),
-        # Column("16 Day RSI", Float),
-        # Column("17 Day RSI", Float),
-        # Column("18 Day RSI", Float),
-        # Column("19 Day RSI", Float),
-        # Column("20 Day RSI", Float)
     ) 
 
     metadata.create_all(engine)
