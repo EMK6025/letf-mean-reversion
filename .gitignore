@@ -2,6 +2,5 @@
 *.csv
 
 engine.py
-main.py
 
 __pycache__
