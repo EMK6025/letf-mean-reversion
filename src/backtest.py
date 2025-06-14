@@ -95,7 +95,6 @@ def apply(price, prelim_entry, prelim_exit, size, sell_threshold):
     return size_array
 
 def run(params, start_date, end_date):
-    print("starting run")
     engine = create_engine()
     df = connect(engine, "test_data")
     df['Date'] = pd.to_datetime(df['Date'])

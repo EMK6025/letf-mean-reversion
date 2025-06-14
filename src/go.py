@@ -70,14 +70,19 @@ toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 toolbox.register("mate", tools.cxTwoPoint)
 toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=1, indpb=0.1)
 toolbox.register("select", tools.selTournament, tournsize=3)
-# Omega ratio function (from wfo.py)
+
 def omega_ratio(returns, benchmark):
     excess_returns = returns.sub(benchmark, axis=0)
-    gains = excess_returns.clip(lower=0)
+    gains  = excess_returns.clip(lower=0)
     losses = excess_returns.clip(upper=0)
     mean_gains = gains.mean(axis=0)
-    mean_losses = losses.mean(axis=0).abs()
-    return mean_gains / mean_losses.replace(0, np.nan)
+    mean_losses = losses.abs().mean(axis=0)
+    if isinstance(mean_losses, pd.Series):
+        mean_losses = mean_losses.replace(0, pd.NA)
+    else:
+        mean_losses = float(mean_losses) if mean_losses != 0 else float("nan")
+    return mean_gains / mean_losses
+
 
 # Existing fitness function
 def fitness(sortino, omega, relative_drawdowns, alpha):
@@ -95,8 +100,6 @@ def fitness(sortino, omega, relative_drawdowns, alpha):
 # # Evaluate a population
 def evaluate(pop, start_date, end_date):
     # Params conversion
-    t0 = time.time()
-    print(f"[evaluate] Converting {len(pop)} individuals → Params…", end=" ")
     params = []
     for individual in pop:
         window, entry, exit_, sell_threshold, *pos_sizing = individual
@@ -107,31 +110,19 @@ def evaluate(pop, start_date, end_date):
             sell_threshold=sell_threshold,
             position_sizing=np.array(pos_sizing)
         ))
-    print(f"done in {time.time() - t0:.2f}s")
-
     # Backtest
-    t1 = time.time()
-    print(f"[evaluate] Running backtest.run()…", end=" ")
     pfs = backtest.run(params, start_date, end_date)
-    print(f"done in {time.time() - t1:.2f}s")
-
+    
     # Metrics
-    t2 = time.time()
-    print(f"[evaluate] Computing returns & metrics…", end=" ")
     returns = pfs.returns()
     sortino  = returns.vbt.returns.sortino_ratio(required_return=0.000195)
     omega    = omega_ratio(returns, benchmark_returns)
     drawdown = benchmark.max_drawdown() / pfs.max_drawdown()
     alpha    = pfs.annualized_return() - benchmark.annualized_return()
-    print(f"done in {time.time() - t2:.2f}s")
-
+    
     # Fitness
-    t3 = time.time()
-    print(f"[evaluate] Calculating fitness…", end=" ")
     fitness_vals = fitness(sortino, omega, drawdown, alpha)
-    print(f"done in {time.time() - t3:.2f}s")
-
-    print(f"[evaluate] TOTAL {time.time() - t0:.2f}s\n")
+    
     return fitness_vals
 
 
@@ -146,7 +137,6 @@ def create_initial_population(pop_size=50, start_date="1989-12-31", end_date="20
 
 def run_population(pop, start_date="1989-12-31", end_date="2020-12-31"):
     # Evaluate fitness for each individual
-    print(f"Evaluating population of {len(pop)} strategies...")
     fitnesses = evaluate(pop, start_date, end_date)
     
     for ind, fit in zip(pop, fitnesses):
@@ -190,16 +180,20 @@ def create_next_generation(population, cx_prob=0.5, mut_prob=0.2):
         c1, c2 = toolbox.clone(p1), toolbox.clone(p2)
         if random.random() < cx_prob:
             toolbox.mate(c1, c2)
+            for child in (c1, c2):
+                ps = sorted(child[4:15])
+                child[4:15] = ps
 
         del c1.fitness.values
         del c2.fitness.values
 
         offspring.extend([c1, c2])
+            
 
     offspring = offspring[:pop_size]
 
     
-    # Apply mutation
+    # Apply mutation and fix position sizing
     for mutant in offspring:
         if random.random() < mut_prob:
             toolbox.mutate(mutant)
@@ -208,8 +202,12 @@ def create_next_generation(population, cx_prob=0.5, mut_prob=0.2):
             mutant[1] = max(ENTRY_MIN, min(ENTRY_MAX, int(round(mutant[1]))))
             mutant[2] = max(EXIT_MIN, min(EXIT_MAX, int(round(mutant[2]))))
             mutant[3] = max(SELL_THRESH_MIN, min(SELL_THRESH_MAX, int(round(mutant[3]))))
-            for i in range(4, 15):
-                mutant[i] = max(POS_SIZE_MIN, min(POS_SIZE_MAX, mutant[i]))
+            
+            # Fix position sizing to maintain non-decreasing order
+            pos_sizes = [max(POS_SIZE_MIN, min(POS_SIZE_MAX, mutant[i])) for i in range(4, 15)]
+            pos_sizes.sort()  # Ensure non-decreasing order
+            mutant[4:15] = pos_sizes
+            
             del mutant.fitness.values
     
     return offspring
