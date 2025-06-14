@@ -136,29 +136,36 @@ def evaluate(pop, start_date, end_date):
 
 
 # Function to generate initial population, run backtests, and print fitness scores
-def run_initial_population(pop_size=50, start_date="1989-12-31", end_date="2020-12-31"):
+def create_initial_population(pop_size=50, start_date="1989-12-31", end_date="2020-12-31"):
     
     # Generate population
     pop = toolbox.population(n=pop_size)
-    
+
+    return pop
+
+
+def run_population(pop, start_date="1989-12-31", end_date="2020-12-31"):
     # Evaluate fitness for each individual
-    print(f"Evaluating initial population of {pop_size} strategies...")
+    print(f"Evaluating population of {len(pop)} strategies...")
     fitnesses = evaluate(pop, start_date, end_date)
     
     for ind, fit in zip(pop, fitnesses):
         ind.fitness.values = fit
+    return pop
+    
+        
 
+def show_population(pop):
     # Print results
     print("\nInitial Population Fitness Scores:")
     for i, ind in enumerate(pop):
         print(f"Strategy {i}: Fitness = {ind.fitness.values[0]:.4f}")
         print(f"  Params: window={ind[0]}, entry={ind[1]}, exit={ind[2]}, sell_threshold={ind[3]}")
         print(f"  Position Sizing: {[round(x, 3) for x in ind[4:15]]}\n")
-    
-    return pop
 
-# Function to create the next generation
+
 def create_next_generation(population, cx_prob=0.5, mut_prob=0.2):
+    pop_size = len(population)
     """
     Takes the current population and their fitness scores, then generates the next
     generation using selection, crossover, and mutation.
@@ -173,15 +180,24 @@ def create_next_generation(population, cx_prob=0.5, mut_prob=0.2):
     """
     
     # Select parents and clone them to create offspring
-    offspring = toolbox.select(population, len(population))
+    valid = [ind for ind in population if ind.fitness.values[0] > -1000]
+    survivors_count = min(pop_size//2, len(valid))
+    offspring = tools.selBest(valid, k=survivors_count) 
     offspring = list(map(toolbox.clone, offspring))
     
-    # Apply crossover
-    for child1, child2 in zip(offspring[::2], offspring[1::2]):
+    while len(offspring) < pop_size:
+        p1, p2 = random.sample(offspring, 2)
+        c1, c2 = toolbox.clone(p1), toolbox.clone(p2)
         if random.random() < cx_prob:
-            toolbox.mate(child1, child2)
-            del child1.fitness.values
-            del child2.fitness.values
+            toolbox.mate(c1, c2)
+
+        del c1.fitness.values
+        del c2.fitness.values
+
+        offspring.extend([c1, c2])
+
+    offspring = offspring[:pop_size]
+
     
     # Apply mutation
     for mutant in offspring:
