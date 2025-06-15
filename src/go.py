@@ -14,14 +14,18 @@ import time
 warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
 vbt.settings.array_wrapper['freq'] = '1D'
 SORTINO_THRESHOLD = .5
+SHARPE_THRESHOLD = .5
 OMEGA_THRESHOLD = .85
-DRAWDOWN_THRESHOLD = .5
-ALPHA_SCALING = 15
-ALPHA_THRESHOLD = .025
+DRAWDOWN_THRESHOLD = 2
+ALPHA_THRESHOLD = .04
 
 SORTINO_WEIGHT = 30
+SHARPE_WEIGHT = 30
 OMEGA_WEIGHT = 30
 ALPHA_WEIGHT = 40
+
+ALPHA_SCALING = 75
+DRAWDOWN_SCALING = 2
 
 # Parameter ranges for randomization
 WINDOW_MIN, WINDOW_MAX = 3, 20
@@ -85,14 +89,16 @@ def omega_ratio(returns, benchmark):
 
 
 # Existing fitness function
-def fitness(sortino, omega, relative_drawdowns, alpha):
-    fail_mask = (sortino < SORTINO_THRESHOLD) | (omega < OMEGA_THRESHOLD) | (relative_drawdowns < DRAWDOWN_THRESHOLD)
+def fitness(sortino, sharpe, omega, relative_drawdowns, alpha):
+    fail_mask = (sortino < SORTINO_THRESHOLD) | (sharpe < SHARPE_THRESHOLD) | (omega < OMEGA_THRESHOLD) | (relative_drawdowns < DRAWDOWN_THRESHOLD)
     
     norm_sortino = (np.minimum(sortino, 3) - SORTINO_THRESHOLD) * SORTINO_WEIGHT / (3 - SORTINO_THRESHOLD)
+    norm_sharpe = (np.minimum(sharpe, 3) - SHARPE_THRESHOLD) * SHARPE_WEIGHT / (3 - SHARPE_THRESHOLD)
     norm_omega = (np.minimum(omega, 3) - OMEGA_THRESHOLD) * OMEGA_WEIGHT / (3 - OMEGA_THRESHOLD)
     norm_alpha = 1 / (1 + np.exp(-ALPHA_SCALING * (alpha - ALPHA_THRESHOLD))) * ALPHA_WEIGHT
+    norm_drawdown = 1 / (1 + np.exp(-DRAWDOWN_SCALING * (relative_drawdowns - DRAWDOWN_THRESHOLD)))
 
-    fitness_val = (norm_sortino + norm_omega + norm_alpha) * (relative_drawdowns)
+    fitness_val = (norm_sharpe + norm_omega + norm_alpha) * (norm_drawdown)
     
     fitness_val[fail_mask] = -1000
     return list(zip(fitness_val))
@@ -115,14 +121,14 @@ def evaluate(pop, start_date, end_date):
     
     # Metrics
     returns = pfs.returns()
-    sortino  = returns.vbt.returns.sortino_ratio(required_return=0.000195)
+    sortino  = returns.vbt.returns.sortino_ratio()
+    sharpe   = returns.vbt.returns.sharpe_ratio()
     omega    = omega_ratio(returns, benchmark_returns)
     drawdown = benchmark.max_drawdown() / pfs.max_drawdown()
     alpha    = pfs.annualized_return() - benchmark.annualized_return()
     
     # Fitness
-    fitness_vals = fitness(sortino, omega, drawdown, alpha)
-    
+    fitness_vals = fitness(sortino, sharpe, omega, drawdown, alpha)    
     return fitness_vals
 
 

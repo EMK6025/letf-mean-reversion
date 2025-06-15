@@ -18,7 +18,7 @@ seed = 50
 random.seed(seed)
 np.random.seed(seed)
 
-def walk_forward_optimization(start_date, max_time_minutes=10, stall_generations=10, pop_size=500):
+def walk_forward_optimization(start_date, end_date, max_time_minutes=10, stall_generations=10, pop_size=500):
     """
     Perform walk-forward optimization to find the best strategy for 20 years after start_date.
     
@@ -33,21 +33,6 @@ def walk_forward_optimization(start_date, max_time_minutes=10, stall_generations
         best_fitness: Fitness score of best strategy
         generation_count: Number of generations run
     """
-    
-    print(f"=== Walk-Forward Optimization Starting ===")
-    print(f"Start Date: {start_date}")
-    print(f"Population Size: {pop_size}")
-    print(f"Max Time: {max_time_minutes} minutes")
-    print(f"Stall Threshold: {stall_generations} generations")
-    print("=" * 50)
-    
-    # Calculate training period (20 years from start_date)
-    start_dt = pd.to_datetime(start_date)
-    end_dt = start_dt + pd.DateOffset(years=20)
-    end_date = end_dt.strftime("%Y-%m-%d")
-    
-    print(f"Training Period: {start_date} to {end_date}")
-    print()
     
     # Initialize timing and tracking variables
     start_time = time.time()
@@ -66,7 +51,7 @@ def walk_forward_optimization(start_date, max_time_minutes=10, stall_generations
     valid_pop = [ind for ind in population if ind.fitness.values[0] > -1000]
     if not valid_pop:
         print("No valid strategies found in initial population!")
-        return None, -1000, 0
+        return None, -1000, 0, 0
     
     best_individual = max(valid_pop, key=lambda x: x.fitness.values[0])
     best_fitness = best_individual.fitness.values[0]
@@ -99,18 +84,13 @@ def walk_forward_optimization(start_date, max_time_minutes=10, stall_generations
             # Check for improvement
             if current_fitness > best_fitness:
                 improvement = current_fitness - best_fitness
-                if improvement >= 1.0:
-                    stall_counter = 0
-                    best_individual = current_best
-                    best_fitness = current_fitness
-                    print(f"NEW BEST! Fitness = {best_fitness:.2f} (+{improvement:.2f}) ({len(valid_pop)}/{pop_size} valid)")
-                else:
-                    stall_counter += 1
-                    print(f"Small Improvement! Fitness = {current_fitness:.2f} (+{improvement:.2f}) (Stall: {stall_counter}/{stall_generations}) ({len(valid_pop)}/{pop_size} valid)")
-
+                stall_counter = 0
+                best_individual = current_best
+                best_fitness = current_fitness
+                print(f"NEW BEST! Fitness = {best_fitness:.2f} (+{improvement:.2f}) ({len(valid_pop)}/{pop_size} valid)")
             else:
                 stall_counter += 1
-                print(f"Best = {current_fitness:.2f}, Overall Best = {best_fitness:.2f} (Stall: {stall_counter}/{stall_generations}) ({len(valid_pop)}/{pop_size} valid)")
+                print(f"Overall Best = {best_fitness:.2f} (Stall: {stall_counter}/{stall_generations}) ({len(valid_pop)}/{pop_size} valid)")
         else:
             stall_counter += 1
             print(f"No valid strategies (Stall: {stall_counter}/{stall_generations})")
@@ -199,9 +179,9 @@ def analyze_best_strategy(best_individual, start_date):
     spx_sharpe = spx_returns.vbt.returns.sharpe_ratio()
     letf_sharpe = letf_returns.vbt.returns.sharpe_ratio()
     
-    strategy_sortino = strategy_returns.vbt.returns.sortino_ratio(required_return=0.000195)
-    spx_sortino = spx_returns.vbt.returns.sortino_ratio(required_return=0.000195)
-    letf_sortino = letf_returns.vbt.returns.sortino_ratio(required_return=0.000195)
+    strategy_sortino = strategy_returns.vbt.returns.sortino_ratio()
+    spx_sortino = spx_returns.vbt.returns.sortino_ratio()
+    letf_sortino = letf_returns.vbt.returns.sortino_ratio()
     
     strategy_omega = go.omega_ratio(strategy_returns, spx_returns)
     spx_omega = go.omega_ratio(spx_returns, spx_returns)
@@ -244,6 +224,7 @@ def analyze_best_strategy(best_individual, start_date):
 if __name__ == "__main__":
     # Test with 1990-01-01 start date
     start_date = "1990-01-01"
+    end_date = "2009-12-31"
     
     print("Starting Walk-Forward Optimization...")
     print(f"Testing period: 20 years from {start_date}")
@@ -251,9 +232,10 @@ if __name__ == "__main__":
     # Run optimization
     best_individual, best_fitness, generations, fitness_history = walk_forward_optimization(
         start_date=start_date,
+        end_date=end_date,
         max_time_minutes=10,
         stall_generations=10,
-        pop_size=500
+        pop_size=5000
     )
     
     if best_individual is not None:
