@@ -10,22 +10,10 @@ from deap import base, creator, tools
 import random
 import warnings
 import time
+from fitness import fitness, omega_ratio  # Import from fitness module
 
 warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
 vbt.settings.array_wrapper['freq'] = '1D'
-SORTINO_THRESHOLD = .5
-SHARPE_THRESHOLD = .5
-OMEGA_THRESHOLD = .85
-DRAWDOWN_THRESHOLD = 2
-ALPHA_THRESHOLD = .04
-
-SORTINO_WEIGHT = 30
-SHARPE_WEIGHT = 30
-OMEGA_WEIGHT = 30
-ALPHA_WEIGHT = 40
-
-ALPHA_SCALING = 75
-DRAWDOWN_SCALING = 2
 
 # Parameter ranges for randomization
 WINDOW_MIN, WINDOW_MAX = 3, 20
@@ -75,35 +63,7 @@ toolbox.register("mate", tools.cxTwoPoint)
 toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=1, indpb=0.1)
 toolbox.register("select", tools.selTournament, tournsize=3)
 
-def omega_ratio(returns, benchmark):
-    excess_returns = returns.sub(benchmark, axis=0)
-    gains  = excess_returns.clip(lower=0)
-    losses = excess_returns.clip(upper=0)
-    mean_gains = gains.mean(axis=0)
-    mean_losses = losses.abs().mean(axis=0)
-    if isinstance(mean_losses, pd.Series):
-        mean_losses = mean_losses.replace(0, pd.NA)
-    else:
-        mean_losses = float(mean_losses) if mean_losses != 0 else float("nan")
-    return mean_gains / mean_losses
-
-
-# Existing fitness function
-def fitness(sortino, sharpe, omega, relative_drawdowns, alpha):
-    fail_mask = (sortino < SORTINO_THRESHOLD) | (sharpe < SHARPE_THRESHOLD) | (omega < OMEGA_THRESHOLD) | (relative_drawdowns < DRAWDOWN_THRESHOLD)
-    
-    norm_sortino = (np.minimum(sortino, 3) - SORTINO_THRESHOLD) * SORTINO_WEIGHT / (3 - SORTINO_THRESHOLD)
-    norm_sharpe = (np.minimum(sharpe, 3) - SHARPE_THRESHOLD) * SHARPE_WEIGHT / (3 - SHARPE_THRESHOLD)
-    norm_omega = (np.minimum(omega, 3) - OMEGA_THRESHOLD) * OMEGA_WEIGHT / (3 - OMEGA_THRESHOLD)
-    norm_alpha = 1 / (1 + np.exp(-ALPHA_SCALING * (alpha - ALPHA_THRESHOLD))) * ALPHA_WEIGHT
-    norm_drawdown = 1 / (1 + np.exp(-DRAWDOWN_SCALING * (relative_drawdowns - DRAWDOWN_THRESHOLD)))
-
-    fitness_val = (norm_sharpe + norm_omega + norm_alpha) * (norm_drawdown)
-    
-    fitness_val[fail_mask] = -1000
-    return list(zip(fitness_val))
-
-# # Evaluate a population
+# Evaluate a population
 def evaluate(pop, start_date, end_date):
     # Params conversion
     params = []
