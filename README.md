@@ -34,7 +34,7 @@ net start postgresql-x64-17
 
 Then open a new terminal and run:
 ```bash
-psql -U your_username -d postgres
+psql -U your_username
 
 CREATE DATABASE letf_data;
 ```
