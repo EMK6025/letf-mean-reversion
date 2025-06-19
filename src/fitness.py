@@ -28,18 +28,22 @@ class AdaptiveFitness:
         }
     
     def __call__(self, sortino, sharpe, rel_drawdown, alpha, generation=0):
-        return self.evaluate(sortino, sharpe, rel_drawdown, alpha, generation)
+        return self.fitness(sortino, sharpe, rel_drawdown, alpha, generation)
     
-    def evaluate(self, sortino, sharpe, rel_drawdown, alpha, generation=0):
+    def fitness(self, sortino, sharpe, rel_drawdown, alpha, generation=0):
         self._update_metrics_history(sortino, sharpe, rel_drawdown, alpha)
 
         thresholds = self._get_adaptive_thresholds(generation)
         
         valid_mask = (
-            (rel_drawdown <= thresholds['rel_drawdown_max']) & 
-            (alpha >= thresholds['alpha_min']) &
+             np.isfinite(sortino) &
+            np.isfinite(sharpe) &
+            np.isfinite(alpha) &
+            np.isfinite(rel_drawdown) &
             (sortino >= thresholds['sortino_min']) &
-            (sharpe >= thresholds['sharpe_min'])
+            (sharpe >= thresholds['sharpe_min']) &
+            (alpha >= thresholds['alpha_min']) &
+            (rel_drawdown <= thresholds['rel_drawdown_max'])
         )
         
         fitness_sortino = np.where(valid_mask, sortino, -1000)
@@ -68,10 +72,10 @@ class AdaptiveFitness:
     
     def _get_adaptive_thresholds(self, generation):
         thresholds = {
-            'rel_drawdown_max': 2.0,
-            'alpha_min': -0.5,
-            'sortino_min': -1.0,
-            'sharpe_min': -1.0
+            'rel_drawdown_max': 1.0,
+            'alpha_min': 0.0,
+            'sortino_min': .3,
+            'sharpe_min': .5
         }
         
         if len(self.metrics_history['sortino']) >= self.warmup_generations:
@@ -101,6 +105,6 @@ class AdaptiveFitness:
 # backwards compatibility
 fitness = AdaptiveFitness()
 
-def create_fitness(warmup_generations=5, target_generations=50):
+def create_fitness(warmup_generations=1, target_generations=50):
     """Create a custom fitness evaluator with different adaptation parameters"""
     return AdaptiveFitness(warmup_generations, target_generations)

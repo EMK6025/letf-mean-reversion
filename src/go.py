@@ -80,7 +80,7 @@ def run_population(pop, start_date="1989-12-31", end_date="2020-12-31", generati
 
 def create_initial_population(pop_size=50, start_date="1989-12-31", end_date="2020-12-31"):
     pop = toolbox.population(n=pop_size)
-
+    pop = run_population(pop, start_date=start_date, end_date=end_date)
     return pop
 
 def show_population(pop):
