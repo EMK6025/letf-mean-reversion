@@ -3,7 +3,6 @@ from engine import create_engine, connect
 import numpy as np
 from vectorbt import Portfolio, RSI, IndicatorFactory
 from dataclasses import dataclass, field
-import matplotlib.pyplot as plt
 
 @dataclass
 class Params:

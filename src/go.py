@@ -9,33 +9,28 @@ import vectorbt as vbt
 from deap import base, creator, tools
 import random
 import warnings
-import time
-from fitness import fitness, omega_ratio  # Import from fitness module
+from fitness import fitness, calc_metrics
 
 warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
 vbt.settings.array_wrapper['freq'] = '1D'
 
-# Parameter ranges for randomization
 WINDOW_MIN, WINDOW_MAX = 3, 20
 ENTRY_MIN, ENTRY_MAX = 0, 50
 EXIT_MIN, EXIT_MAX = 50,100
 SELL_THRESH_MIN, SELL_THRESH_MAX = 0,100
 POS_SIZE_MIN, POS_SIZE_MAX = 0.0, 1.0
 
-# DEAP setup
-creator.create("FitnessMax", base.Fitness, weights=(1.0,))
-creator.create("Individual", list, fitness=creator.FitnessMax)
+creator.create("FitnessMulti", base.Fitness, weights=(1.0, 1.0, -1.0, 1.0))
+creator.create("Individual", list, fitness=creator.FitnessMulti)
 
 toolbox = base.Toolbox()
 
-# Attribute generators for randomization
 toolbox.register("attr_window", random.randint, WINDOW_MIN, WINDOW_MAX)
 toolbox.register("attr_entry", random.randint, ENTRY_MIN, ENTRY_MAX)
 toolbox.register("attr_exit", random.randint, EXIT_MIN, EXIT_MAX)
 toolbox.register("attr_sell_thresh", random.randint, SELL_THRESH_MIN, SELL_THRESH_MAX)
 toolbox.register("attr_pos_size", random.uniform, POS_SIZE_MIN, POS_SIZE_MAX)
 
-# Load data once for efficiency
 engine = create_engine()
 df = connect(engine, "test_data")
 df['Date'] = pd.to_datetime(df['Date'])
@@ -45,7 +40,6 @@ spxt = df["SPX Close"]
 benchmark = Portfolio.from_holding(close=spxt, freq='1D')
 benchmark_returns = benchmark.returns()
 
-# Function to create a single individual (strategy parameters)
 def create_individual():
     ind = [
         toolbox.attr_window(),
@@ -57,15 +51,7 @@ def create_individual():
     ind.extend(pos)
     return ind
 
-toolbox.register("individual", tools.initIterate, creator.Individual, create_individual)
-toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-toolbox.register("mate", tools.cxTwoPoint)
-toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=1, indpb=0.1)
-toolbox.register("select", tools.selTournament, tournsize=3)
-
-# Evaluate a population
-def evaluate(pop, start_date, end_date):
-    # Params conversion
+def evaluate(pop, start_date, end_date, generation=0):
     params = []
     for individual in pop:
         window, entry, exit_, sell_threshold, *pos_sizing = individual
@@ -76,51 +62,39 @@ def evaluate(pop, start_date, end_date):
             sell_threshold=sell_threshold,
             position_sizing=np.array(pos_sizing)
         ))
-    # Backtest
+        
     pfs = backtest.run(params, start_date, end_date)
     
-    # Metrics
-    returns = pfs.returns()
-    sortino  = returns.vbt.returns.sortino_ratio()
-    sharpe   = returns.vbt.returns.sharpe_ratio()
-    omega    = omega_ratio(returns, benchmark_returns)
-    drawdown = benchmark.max_drawdown() / pfs.max_drawdown()
-    alpha    = pfs.annualized_return() - benchmark.annualized_return()
+    sortino, sharpe, rel_drawdown, _, alpha, _ = calc_metrics(pfs, benchmark)
     
-    # Fitness
-    fitness_vals = fitness(sortino, sharpe, omega, drawdown, alpha)    
-    return fitness_vals
-
-
-# Function to generate initial population, run backtests, and print fitness scores
-def create_initial_population(pop_size=50, start_date="1989-12-31", end_date="2020-12-31"):
+    fitness_vals = fitness(sortino, sharpe, rel_drawdown, alpha, generation)
     
-    # Generate population
-    pop = toolbox.population(n=pop_size)
+    return list(zip(*fitness_vals))
 
-    return pop
-
-
-def run_population(pop, start_date="1989-12-31", end_date="2020-12-31"):
-    # Evaluate fitness for each individual
-    fitnesses = evaluate(pop, start_date, end_date)
+def run_population(pop, start_date="1989-12-31", end_date="2020-12-31", generation=0):
+    fitnesses = evaluate(pop, start_date, end_date, generation)
     
     for ind, fit in zip(pop, fitnesses):
         ind.fitness.values = fit
     return pop
-    
-        
+
+def create_initial_population(pop_size=50, start_date="1989-12-31", end_date="2020-12-31"):
+    pop = toolbox.population(n=pop_size)
+
+    return pop
 
 def show_population(pop):
-    # Print results
-    print("\nInitial Population Fitness Scores:")
+    print("\nPopulation Fitness Scores (Multi-Objective):")
+    print("="*80)
+    print(f"{'#':<3} {'Sortino':<8} {'Sharpe':<8} {'RelDD':<8} {'Alpha':<8} {'Window':<6} {'Entry':<5} {'Exit':<4}")
+    print("-"*80)
+    
     for i, ind in enumerate(pop):
-        print(f"Strategy {i}: Fitness = {ind.fitness.values[0]:.4f}")
-        print(f"  Params: window={ind[0]}, entry={ind[1]}, exit={ind[2]}, sell_threshold={ind[3]}")
-        print(f"  Position Sizing: {[round(x, 3) for x in ind[4:15]]}\n")
+        sortino, sharpe, rel_dd, alpha = ind.fitness.values
+        print(f"{i:<3} {sortino:<8.3f} {sharpe:<8.3f} {rel_dd:<8.3f} {alpha:<8.3f} "
+              f"{ind[0]:<6} {ind[1]:<5} {ind[2]:<4}")
 
-
-def create_next_generation(population, cx_prob=0.5, mut_prob=0.2):
+def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date="1989-12-31", end_date="2020-12-31", generation=0):
     pop_size = len(population)
     """
     Takes the current population and their fitness scores, then generates the next
@@ -135,45 +109,39 @@ def create_next_generation(population, cx_prob=0.5, mut_prob=0.2):
         List of individuals representing the next generation
     """
     
-    # Select parents and clone them to create offspring
-    valid = [ind for ind in population if ind.fitness.values[0] > -1000]
-    survivors_count = min(pop_size//2, len(valid))
-    offspring = tools.selBest(valid, k=survivors_count) 
-    offspring = list(map(toolbox.clone, offspring))
-    
-    while len(offspring) < pop_size:
-        p1, p2 = random.sample(offspring, 2)
-        c1, c2 = toolbox.clone(p1), toolbox.clone(p2)
-        if random.random() < cx_prob:
+    offspring = []
+    for _ in range(pop_size):
+        if random.random() < cx_prob and pop_size >= 2:
+            p1, p2 = random.sample(population, 2)
+            c1, c2 = toolbox.clone(p1), toolbox.clone(p2)
             toolbox.mate(c1, c2)
-            for child in (c1, c2):
-                ps = sorted(child[4:15])
-                child[4:15] = ps
-
-        del c1.fitness.values
-        del c2.fitness.values
-
-        offspring.extend([c1, c2])
-            
-
-    offspring = offspring[:pop_size]
-
-    
-    # Apply mutation and fix position sizing
-    for mutant in offspring:
+            child = random.choice([c1, c2])
+            ps = sorted(child[4:15])
+            child[4:15] = ps
+        else:
+            child = toolbox.clone(random.choice(population))
+        
         if random.random() < mut_prob:
-            toolbox.mutate(mutant)
-            # Clamp values to valid ranges
-            mutant[0] = max(WINDOW_MIN, min(WINDOW_MAX, int(round(mutant[0]))))
-            mutant[1] = max(ENTRY_MIN, min(ENTRY_MAX, int(round(mutant[1]))))
-            mutant[2] = max(EXIT_MIN, min(EXIT_MAX, int(round(mutant[2]))))
-            mutant[3] = max(SELL_THRESH_MIN, min(SELL_THRESH_MAX, int(round(mutant[3]))))
-            
-            # Fix position sizing to maintain non-decreasing order
-            pos_sizes = [max(POS_SIZE_MIN, min(POS_SIZE_MAX, mutant[i])) for i in range(4, 15)]
-            pos_sizes.sort()  # Ensure non-decreasing order
-            mutant[4:15] = pos_sizes
-            
-            del mutant.fitness.values
+            toolbox.mutate(child)
+            child[0] = max(WINDOW_MIN, min(WINDOW_MAX, int(round(child[0]))))
+            child[1] = max(ENTRY_MIN, min(ENTRY_MAX, int(round(child[1]))))
+            child[2] = max(EXIT_MIN, min(EXIT_MAX, int(round(child[2]))))
+            child[3] = max(SELL_THRESH_MIN, min(SELL_THRESH_MAX, int(round(child[3]))))
+            pos_sizes = sorted([max(POS_SIZE_MIN, min(POS_SIZE_MAX, x)) for x in child[4:15]])
+            child[4:15] = pos_sizes
+        
+        del child.fitness.values
+        offspring.append(child)
     
-    return offspring
+    offspring = run_population(offspring, start_date=start_date, end_date=end_date, generation=generation)
+
+    combined = population + offspring
+    next_gen = toolbox.select(combined, k=pop_size)
+    
+    return next_gen
+
+toolbox.register("individual", tools.initIterate, creator.Individual, create_individual)
+toolbox.register("population", tools.initRepeat, list, toolbox.individual)
+toolbox.register("mate", tools.cxTwoPoint)
+toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=1, indpb=0.1)
+toolbox.register("select", tools.selNSGA2)

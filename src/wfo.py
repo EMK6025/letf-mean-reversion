@@ -1,101 +1,96 @@
 import go
-from backtest import Portfolio, Params
+from engine import create_engine, connect
+from vectorbt import Portfolio
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import time
-from datetime import datetime, timedelta
 from engine import create_engine, connect
 import vectorbt as vbt
 import warnings
 import random
+import backtest
+from backtest import Params
+from deap import tools
 
 warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
 vbt.settings.array_wrapper['freq'] = '1D'
 
-# setting random seed
 seed = 50
 random.seed(seed)
 np.random.seed(seed)
 
 def walk_forward_optimization(start_date, end_date, max_time_minutes=10, stall_generations=10, pop_size=500):
-    """
-    Perform walk-forward optimization to find the best strategy for 20 years after start_date.
-    
-    Args:
-        start_date: Starting date for optimization (format: "YYYY-MM-DD")
-        max_time_minutes: Maximum time to run optimization in minutes
-        stall_generations: Stop if no improvement for this many generations
-        pop_size: Population size for genetic algorithm
-    
-    Returns:
-        best_individual: The best strategy found
-        best_fitness: Fitness score of best strategy
-        generation_count: Number of generations run
-    """
-    
-    # Initialize timing and tracking variables
+    from fitness import fitness
+
     start_time = time.time()
     max_time_seconds = max_time_minutes * 60
     
-    best_fitness_history = []
+    hypervolume_history = []
     stall_counter = 0
     generation = 0
+    best_hypervolume = 0
     
-    # Generate initial population
     print("Generating initial population...")
     population = go.create_initial_population(pop_size=pop_size)
-    population = go.run_population(population, start_date=start_date, end_date=end_date)
+    population = go.create_next_generation(population, start_date=start_date, end_date=end_date)
+
     
-    # Track best individual
-    valid_pop = [ind for ind in population if ind.fitness.values[0] > -1000]
-    if not valid_pop:
-        print("No valid strategies found in initial population!")
-        return None, -1000, 0, 0
+    # Get pareto front from initial population
+    pareto_front = tools.sortNondominated(population, len(population), first_front_only=True)[0]
     
-    best_individual = max(valid_pop, key=lambda x: x.fitness.values[0])
-    best_fitness = best_individual.fitness.values[0]
-    best_fitness_history.append(best_fitness)
+    # Calculate hypervolume to proxy evolution progression
+    # Reference point for hypervolume (worst case values)
+    ref_point = [-1.0, -1.0, 2.0, -0.5]  # sortino, sharpe, rel_dd, alpha
     
-    print(f"\nGeneration {generation}: Best Fitness = {best_fitness:.2f} ({len(valid_pop)}/{pop_size} valid)")
+    def calculate_hypervolume(front):
+        if not front:
+            return 0
+        volume = 0
+        for ind in front:
+            if ind.fitness.values[0] > -999:
+                vol = 1
+                for i, (val, ref) in enumerate(zip(ind.fitness.values, ref_point)):
+                    if i == 2:
+                        vol *= max(0, ref - val)
+                    else:
+                        vol *= max(0, val - ref)
+                volume += vol
+        return volume
     
-    # Evolution loop
+    current_hypervolume = calculate_hypervolume(pareto_front)
+    best_hypervolume = current_hypervolume
+    hypervolume_history.append(current_hypervolume)
+    
+    print(f"\nGeneration {generation}: Pareto front size = {len(pareto_front)}, Hypervolume = {current_hypervolume:.4f}")
+    
     while True:
         generation += 1
         elapsed_time = time.time() - start_time
         
-        # Check time limit
         if elapsed_time > max_time_seconds:
             print(f"Time limit reached ({max_time_minutes} minutes)")
             break
         
         print(f"\nGeneration {generation} (Elapsed: {elapsed_time/60:.1f}min)...")
         
-        # Create next generation
-        population = go.create_next_generation(population)
-        population = go.run_population(population, start_date=start_date, end_date=end_date)
+        population = go.create_next_generation(population, start_date=start_date, end_date=end_date, generation=generation)
         
-        # Find best in current generation
-        valid_pop = [ind for ind in population if ind.fitness.values[0] > -1000]
-        if valid_pop:
-            current_best = max(valid_pop, key=lambda x: x.fitness.values[0])
-            current_fitness = current_best.fitness.values[0]
-            
-            # Check for improvement
-            if current_fitness > best_fitness:
-                improvement = current_fitness - best_fitness
-                stall_counter = 0
-                best_individual = current_best
-                best_fitness = current_fitness
-                print(f"NEW BEST! Fitness = {best_fitness:.2f} (+{improvement:.2f}) ({len(valid_pop)}/{pop_size} valid)")
-            else:
-                stall_counter += 1
-                print(f"Overall Best = {best_fitness:.2f} (Stall: {stall_counter}/{stall_generations}) ({len(valid_pop)}/{pop_size} valid)")
+        # Get new pareto front
+        pareto_front = tools.sortNondominated(population, len(population), first_front_only=True)[0]
+        current_hypervolume = calculate_hypervolume(pareto_front)
+        
+        # Check for improvement
+        if current_hypervolume > best_hypervolume:
+            improvement = current_hypervolume - best_hypervolume
+            stall_counter = 0
+            best_hypervolume = current_hypervolume
+            print(f"NEW BEST! Hypervolume = {current_hypervolume:.4f} (+{improvement:.4f}), Pareto size = {len(pareto_front)}")
         else:
             stall_counter += 1
-            print(f"No valid strategies (Stall: {stall_counter}/{stall_generations})")
+            print(f"Hypervolume = {current_hypervolume:.4f} (Stall: {stall_counter}/{stall_generations}), Pareto size = {len(pareto_front)}")
         
-        best_fitness_history.append(best_fitness)
+        hypervolume_history.append(current_hypervolume)
         
         # Check stall condition
         if stall_counter >= stall_generations:
@@ -105,138 +100,175 @@ def walk_forward_optimization(start_date, end_date, max_time_minutes=10, stall_g
     total_time = time.time() - start_time
     print(f"\nTotal optimization time: {total_time/60:.2f} minutes")
     print(f"Final generation: {generation}")
+    print(f"Final Pareto front size: {len(pareto_front)}")
     
-    return best_individual, best_fitness, generation, best_fitness_history
+    return pareto_front, generation, hypervolume_history
 
-def analyze_best_strategy(best_individual, start_date):
+def analyze_pareto_front(pareto_front, start_date):
     """
-    Analyze and display the performance of the best strategy found.
+    Analyze and display the Pareto front strategies.
     """
-    if best_individual is None:
-        print("No valid strategy to analyze!")
+    if not pareto_front:
+        print("No valid strategies to analyze!")
         return
     
-    print("\n" + "="*60)
-    print("BEST STRATEGY ANALYSIS")
-    print("="*60)
+    print("\n" + "="*80)
+    print("PARETO FRONT ANALYSIS")
+    print("="*80)
     
-    # Extract parameters
-    window, entry, exit_, sell_threshold, *pos_sizing = best_individual
+    print(f"\nTop strategies by each objective:")
     
-    print(f"Strategy Parameters:")
+    best_sortino = max(pareto_front, key=lambda x: x.fitness.values[0] if x.fitness.values[0] > -999 else -float('inf'))
+    print(f"\nBest Sortino: {best_sortino.fitness.values[0]:.3f}")
+    print(f"   Full fitness: S={best_sortino.fitness.values[0]:.3f}, Sh={best_sortino.fitness.values[1]:.3f}, "
+          f"RD={best_sortino.fitness.values[2]:.3f}, α={best_sortino.fitness.values[3]:.3f}")
+    
+    best_sharpe = max(pareto_front, key=lambda x: x.fitness.values[1] if x.fitness.values[0] > -999 else -float('inf'))
+    print(f"\nBest Sharpe: {best_sharpe.fitness.values[1]:.3f}")
+    print(f"   Full fitness: S={best_sharpe.fitness.values[0]:.3f}, Sh={best_sharpe.fitness.values[1]:.3f}, "
+          f"RD={best_sharpe.fitness.values[2]:.3f}, α={best_sharpe.fitness.values[3]:.3f}")
+    
+    best_rel_dd = min(pareto_front, key=lambda x: x.fitness.values[2] if x.fitness.values[0] > -999 else float('inf'))
+    print(f"\nBest Relative Drawdown: {best_rel_dd.fitness.values[2]:.3f}")
+    print(f"   Full fitness: S={best_rel_dd.fitness.values[0]:.3f}, Sh={best_rel_dd.fitness.values[1]:.3f}, "
+          f"RD={best_rel_dd.fitness.values[2]:.3f}, α={best_rel_dd.fitness.values[3]:.3f}")
+    
+    best_alpha = max(pareto_front, key=lambda x: x.fitness.values[3] if x.fitness.values[0] > -999 else -float('inf'))
+    print(f"\nBest Alpha: {best_alpha.fitness.values[3]:.3f}")
+    print(f"   Full fitness: S={best_alpha.fitness.values[0]:.3f}, Sh={best_alpha.fitness.values[1]:.3f}, "
+          f"RD={best_alpha.fitness.values[2]:.3f}, α={best_alpha.fitness.values[3]:.3f}")
+    
+    def rank_score(ind):
+        if ind.fitness.values[0] <= -999:
+            return float('inf')
+        ranks = []
+        # Sortino
+        ranks.append(sum(1 for x in pareto_front if x.fitness.values[0] > ind.fitness.values[0]))
+        # Sharpe
+        ranks.append(sum(1 for x in pareto_front if x.fitness.values[1] > ind.fitness.values[1]))
+        # Rel DD
+        ranks.append(sum(1 for x in pareto_front if x.fitness.values[2] < ind.fitness.values[2]))
+        # Alpha
+        ranks.append(sum(1 for x in pareto_front if x.fitness.values[3] > ind.fitness.values[3]))
+        return sum(ranks) / len(ranks)
+    
+    balanced_strategy = min(pareto_front, key=rank_score)
+    
+    print(f"\nMost Balanced Strategy:")
+    print(f"   Fitness: S={balanced_strategy.fitness.values[0]:.3f}, Sh={balanced_strategy.fitness.values[1]:.3f}, "
+          f"RD={balanced_strategy.fitness.values[2]:.3f}, α={balanced_strategy.fitness.values[3]:.3f}")
+    
+    window, entry, exit_, sell_threshold, *pos_sizing = balanced_strategy
+    
+    print(f"\nBalanced Strategy Parameters:")
     print(f"   RSI Window: {window}")
     print(f"   Entry Threshold: {entry}")
     print(f"   Exit Threshold: {exit_}")
     print(f"   Sell Threshold: {sell_threshold}%")
     print(f"   Position Sizing: {[round(x, 3) for x in pos_sizing]}")
-    print(f"   Fitness Score: {best_individual.fitness.values[0]:.4f}")
     
-    # Create parameter object
-    best_params = Params(
-        window=window,
-        entry=entry,
-        exit=exit_,
-        sell_threshold=sell_threshold,
-        position_sizing=np.array(pos_sizing)
-    )
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    fig.suptitle('Pareto Front Trade-offs', fontsize=14)
     
-    # Calculate test period (20 years from start_date)
-    start_dt = pd.to_datetime(start_date)
-    end_dt = start_dt + pd.DateOffset(years=20)
-    end_date = end_dt.strftime("%Y-%m-%d")
+    objectives = ['Sortino', 'Sharpe', 'Rel DD', 'Alpha']
+    obj_indices = [0, 1, 2, 3]
     
-    print(f"\nPerformance Analysis ({start_date} to {end_date}):")
+    plot_idx = 0
+    for i in range(len(objectives)):
+        for j in range(i+1, len(objectives)):
+            row = plot_idx // 3
+            col = plot_idx % 3
+            ax = axes[row, col]
+            
+            x_vals = [ind.fitness.values[obj_indices[i]] for ind in pareto_front if ind.fitness.values[0] > -999]
+            y_vals = [ind.fitness.values[obj_indices[j]] for ind in pareto_front if ind.fitness.values[0] > -999]
+            
+            ax.scatter(x_vals, y_vals, alpha=0.6)
+            ax.set_xlabel(objectives[i])
+            ax.set_ylabel(objectives[j])
+            ax.grid(True, alpha=0.3)
+            
+            plot_idx += 1
     
-    # Load data for benchmarks
+    if plot_idx < 6:
+        fig.delaxes(axes.flatten()[plot_idx])
+    
+    plt.tight_layout()
+
     engine = create_engine()
     df = connect(engine, "test_data")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index("Date", inplace=True)
     df.sort_index(inplace=True)
+    spxt = df["SPX Close"][start_date:end_date]
+    UPRO = df["3x LETF"][start_date:end_date]
+
+    base = Portfolio.from_holding(
+        close      = spxt,
+        freq       = '1D'
+    )
     
-    # Filter to test period
-    spx_data = df["SPX Close"].loc[start_date:end_date]
-    letf_data = df["3x LETF"].loc[start_date:end_date]
-    
-    # Create benchmark portfolios
-    spx_portfolio = Portfolio.from_holding(close=spx_data, freq='1D')
-    letf_portfolio = Portfolio.from_holding(close=letf_data, freq='1D')
-    
-    # Run strategy
-    import backtest
-    strategy_portfolio = backtest.run([best_params], start_date, end_date)
-    
-    # Calculate metrics
-    strategy_returns = strategy_portfolio.returns().iloc[:, 0]
-    spx_returns = spx_portfolio.returns()
-    letf_returns = letf_portfolio.returns()
-    
-    strategy_annual_return = strategy_portfolio.annualized_return().iloc[0]
-    spx_annual_return = spx_portfolio.annualized_return()
-    letf_annual_return = letf_portfolio.annualized_return()
-    
-    strategy_sharpe = strategy_returns.vbt.returns.sharpe_ratio()
-    spx_sharpe = spx_returns.vbt.returns.sharpe_ratio()
-    letf_sharpe = letf_returns.vbt.returns.sharpe_ratio()
-    
-    strategy_sortino = strategy_returns.vbt.returns.sortino_ratio()
-    spx_sortino = spx_returns.vbt.returns.sortino_ratio()
-    letf_sortino = letf_returns.vbt.returns.sortino_ratio()
-    
-    strategy_omega = go.omega_ratio(strategy_returns, spx_returns)
-    spx_omega = go.omega_ratio(spx_returns, spx_returns)
-    letf_omega = go.omega_ratio(letf_returns, spx_returns)
-    
-    strategy_max_dd = strategy_portfolio.max_drawdown().iloc[0]
-    spx_max_dd = spx_portfolio.max_drawdown()
-    letf_max_dd = letf_portfolio.max_drawdown()
-    
-    # Print comparison table
-    print(f"{'Metric':<20} {'Strategy':<12} {'SPX':<12} {'3x LETF':<12}")
-    print("-" * 60)
-    print(f"{'Annual Return':<20} {strategy_annual_return:>11.2%} {spx_annual_return:>11.2%} {letf_annual_return:>11.2%}")
-    print(f"{'Sharpe Ratio':<20} {strategy_sharpe:>11.3f} {spx_sharpe:>11.3f} {letf_sharpe:>11.3f}")
-    print(f"{'Sortino Ratio':<20} {strategy_sortino:>11.3f} {spx_sortino:>11.3f} {letf_sortino:>11.3f}")
-    print(f"{'Omega Ratio':<20} {strategy_omega:>11.2%} {spx_omega:>11.2%} {letf_omega:>11.2%}")
-    print(f"{'Max Drawdown':<20} {strategy_max_dd:>11.2%} {spx_max_dd:>11.2%} {letf_max_dd:>11.2%}")
-    
-    # Create performance chart
-    strategy_value = strategy_portfolio.value().iloc[:, 0]
-    spx_value = spx_portfolio.value()
-    letf_value = letf_portfolio.value()
-    
-    plt.figure(figsize=(14, 8))
-    plt.plot(strategy_value.index, strategy_value.values, label='Optimized Strategy', linewidth=2, color='green')
-    plt.plot(spx_value.index, spx_value.values, label='SPX', linewidth=2, color='blue')
-    plt.plot(letf_value.index, letf_value.values, label='3x LETF', linewidth=2, color='red')
-    
-    plt.title(f'Strategy Performance Comparison ({start_date} to {end_date})', fontsize=14, fontweight='bold')
-    plt.xlabel('Date')
+    upro = Portfolio.from_holding(
+        close = UPRO, 
+        freq = '1D'
+    )
+    etf1_value = base.value()
+    etf3_value = upro.value()
+    params = []
+    pop = [balanced_strategy, best_sortino, best_sharpe, best_rel_dd, best_alpha]
+    for individual in pop:
+        window, entry, exit_, sell_threshold, *pos_sizing = individual
+        params.append(Params(
+            window=window,
+            entry=entry,
+            exit=exit_,
+            sell_threshold=sell_threshold,
+            position_sizing=np.array(pos_sizing)
+        ))
+        
+    pfs = backtest.run(params, start_date, end_date)
+
+    combined = pd.DataFrame({
+        '1x': etf1_value,
+        '3x': etf3_value,
+        'balanced': pfs.iloc[0].value(),
+        'best_sortino': pfs.iloc[1].value(),
+        'best_sharpe': pfs.iloc[2].value(),
+        'best_rel_dd': pfs.iloc[3].value(),
+        'best_alpha': pfs.iloc[4].value(),
+    })
+
+    combined.plot(figsize=(12, 6), title='Simulated LETF Performance')
     plt.ylabel('Portfolio Value')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.yscale('log')
-    plt.tight_layout()
+    plt.grid(True)
+    plt.show()
+
     plt.show()
     
-    return best_params
+    return balanced_strategy
 
 if __name__ == "__main__":
-    # Test with 1990-01-01 start date
     start_date = "1990-01-01"
     end_date = "2009-12-31"
     
-    print("Starting Walk-Forward Optimization...")
-    print(f"Testing period: 20 years from {start_date}")
+    print("Starting Multi-Objective Walk-Forward Optimization...")
+    print(f"Testing period: {start_date} to {end_date}")
     
-    # Run optimization
-    best_individual, best_fitness, generations, fitness_history = walk_forward_optimization(
+    pareto_front, generations, hypervolume_history = walk_forward_optimization(
         start_date=start_date,
         end_date=end_date,
         max_time_minutes=10,
         stall_generations=10,
-        pop_size=5000
+        pop_size=1000
     )
     
-    if best_individual is not None:
-        best_params = analyze_best_strategy(best_individual, start_date)
+    if pareto_front:
+        plt.figure(figsize=(10, 6))
+        plt.plot(hypervolume_history)
+        plt.title('Hypervolume Progress')
+        plt.xlabel('Generation')
+        plt.ylabel('Hypervolume')
+        plt.grid(True, alpha=0.3)
+        plt.show()
+        
+        balanced_strategy = analyze_pareto_front(pareto_front, start_date)
