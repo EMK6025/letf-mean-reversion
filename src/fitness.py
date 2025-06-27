@@ -1,6 +1,9 @@
+# src/fitness.py
 import numpy as np
 import vectorbt as vbt
 import warnings
+from deap import tools
+
 
 warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
 vbt.settings.array_wrapper['freq'] = '1D'
@@ -15,11 +18,8 @@ def calc_metrics(pfs, benchmark):
     annual_return = pfs.annualized_return()
     return sortino, sharpe, rel_drawdown, drawdown, alpha, annual_return
 
-
 class AdaptiveFitness:
-    def __init__(self, warmup_generations=5, target_generations=50):
-        self.warmup_generations = warmup_generations
-        self.target_generations = target_generations
+    def __init__(self):
         self.metrics_history = {
             'sortino': [],
             'sharpe': [],
@@ -27,84 +27,81 @@ class AdaptiveFitness:
             'alpha': []
         }
     
-    def __call__(self, sortino, sharpe, rel_drawdown, alpha, generation=0):
-        return self.fitness(sortino, sharpe, rel_drawdown, alpha, generation)
+    def __call__(self, sortino, sharpe, rel_drawdown, alpha):
+        return self.fitness(sortino, sharpe, rel_drawdown, alpha)
     
-    def fitness(self, sortino, sharpe, rel_drawdown, alpha, generation=0):
-        self._update_metrics_history(sortino, sharpe, rel_drawdown, alpha)
-
-        thresholds = self._get_adaptive_thresholds(generation)
-        
+    def fitness(self, sortino, sharpe, rel_drawdown, alpha):
+        """
+        fitness that removes non-pareto front individuals in the bottom 10% performers in any metric
+        """
+        sort_arr = sortino.values
+        shar_arr = sharpe.values
+        dd_arr   = rel_drawdown.values
+        alpha_arr= alpha.values
+        def dominates(i, j):
+            # Reward metrics: higher is better; drawdown: lower is better
+            better_or_eq = (
+                sort_arr[i] >= sort_arr[j] and
+                shar_arr[i] >= shar_arr[j] and
+                dd_arr[i] <= dd_arr[j] and
+                alpha_arr[i] >= alpha_arr[j]
+            )
+            strictly_better = (
+                sort_arr[i] > sort_arr[j] or
+                shar_arr[i] > shar_arr[j] or
+                dd_arr[i] < dd_arr[j] or
+                alpha_arr[i] > alpha_arr[j]
+            )
+            return better_or_eq and strictly_better
+    
         valid_mask = (
-             np.isfinite(sortino) &
-            np.isfinite(sharpe) &
-            np.isfinite(alpha) &
-            np.isfinite(rel_drawdown) &
-            (sortino >= thresholds['sortino_min']) &
-            (sharpe >= thresholds['sharpe_min']) &
-            (alpha >= thresholds['alpha_min']) &
-            (rel_drawdown <= thresholds['rel_drawdown_max'])
+            np.isfinite(sortino) & 
+            np.isfinite(sharpe) & 
+            (rel_drawdown != 0) &
+            (alpha > 0)
         )
         
-        fitness_sortino = np.where(valid_mask, sortino, -1000)
-        fitness_sharpe = np.where(valid_mask, sharpe, -1000)
-        fitness_rel_drawdown = np.where(valid_mask, rel_drawdown, 1000)
-        fitness_alpha = np.where(valid_mask, alpha, -1000)
+        sortino_10th = np.percentile(sortino[valid_mask], 10)
+        sharpe_10th = np.percentile(sharpe[valid_mask], 10)
+        alpha_10th = np.percentile(alpha[valid_mask], 10)
+        rel_dd_90th = np.percentile(rel_drawdown[valid_mask], 90)  # 90th percentile for drawdown (higher is worse)
         
+        bottom_10_mask = (
+            (sortino < sortino_10th) |
+            (sharpe < sharpe_10th) |
+            (rel_drawdown > rel_dd_90th) |
+            (alpha < alpha_10th)
+        )
+        
+        n = len(sortino)
+        
+        pareto_mask  = np.ones(len(sortino), dtype=bool)
+
+        for j in range(n):
+            for i in range(n):
+                if i != j and dominates(i, j):
+                    pareto_mask[j] = False
+                    break
+            
+        # Combine validity and bottom 10% filtering
+        final_mask = valid_mask & (~bottom_10_mask | pareto_mask)
+        
+        fitness_sortino = np.where(final_mask, sortino, -1000)
+        fitness_sharpe = np.where(final_mask, sharpe, -1000)
+        fitness_rel_drawdown = np.where(final_mask, rel_drawdown, 1000)
+        fitness_alpha = np.where(final_mask, alpha, -1000)
+    
         return (fitness_sortino, fitness_sharpe, fitness_rel_drawdown, fitness_alpha)
     
     def get_stats(self, generation):
-        thresholds = self._get_adaptive_thresholds(generation)
         return {
             'generation': generation,
-            'thresholds': thresholds,
+            'filtering': 'Bottom 10% removal only',
             'history_length': len(self.metrics_history['sortino'])
         }
-    
-    def _update_metrics_history(self, sortino, sharpe, rel_drawdown, alpha):
-        valid_mask = (sortino > -1000) & (sharpe > -1000) & (rel_drawdown < 1000) & (alpha > -1000)
-        
-        if np.any(valid_mask):
-            self.metrics_history['sortino'].append(np.percentile(sortino[valid_mask], 90))
-            self.metrics_history['sharpe'].append(np.percentile(sharpe[valid_mask], 90))
-            self.metrics_history['rel_drawdown'].append(np.percentile(rel_drawdown[valid_mask], 10))  # Lower is better
-            self.metrics_history['alpha'].append(np.percentile(alpha[valid_mask], 90))
-    
-    def _get_adaptive_thresholds(self, generation):
-        thresholds = {
-            'rel_drawdown_max': 1.0,
-            'alpha_min': 0.0,
-            'sortino_min': .3,
-            'sharpe_min': .5
-        }
-        
-        if len(self.metrics_history['sortino']) >= self.warmup_generations:
-            # Use moving average of recent generations (up to 10)
-            window = min(10, len(self.metrics_history['sortino']))
-            
-            recent_sortino = np.mean(self.metrics_history['sortino'][-window:])
-            recent_sharpe = np.mean(self.metrics_history['sharpe'][-window:])
-            recent_rel_dd = np.mean(self.metrics_history['rel_drawdown'][-window:])
-            recent_alpha = np.mean(self.metrics_history['alpha'][-window:])
-            
-            # Progress from 20% to 80% of recent best performance
-            progress_ratio = min(generation / self.target_generations, 1.0)
-            threshold_pct = 0.2 + 0.6 * progress_ratio
-            
-            thresholds['sortino_min'] = recent_sortino * threshold_pct
-            thresholds['sharpe_min'] = recent_sharpe * threshold_pct
-            thresholds['alpha_min'] = recent_alpha * threshold_pct
-            
-            # For drawdown: start accepting 2x best, reduce to 1.2x
-            dd_multiplier = 2.0 - 0.8 * progress_ratio
-            thresholds['rel_drawdown_max'] = recent_rel_dd * dd_multiplier
-        
-        return thresholds
 
-
-# backwards compatibility
 fitness = AdaptiveFitness()
 
-def create_fitness(warmup_generations=1, target_generations=50):
+def create_fitness():
     """Create a custom fitness evaluator with different adaptation parameters"""
-    return AdaptiveFitness(warmup_generations, target_generations)
+    return AdaptiveFitness()

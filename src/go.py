@@ -4,7 +4,6 @@ from backtest import Params
 from engine import create_engine, connect
 from vectorbt import Portfolio
 import numpy as np
-import matplotlib.pyplot as plt
 import vectorbt as vbt
 from deap import base, creator, tools
 import random
@@ -51,7 +50,7 @@ def create_individual():
     ind.extend(pos)
     return ind
 
-def evaluate(pop, start_date, end_date, generation=0):
+def evaluate(pop, start_date, end_date):
     params = []
     for individual in pop:
         window, entry, exit_, sell_threshold, *pos_sizing = individual
@@ -67,12 +66,12 @@ def evaluate(pop, start_date, end_date, generation=0):
     
     sortino, sharpe, rel_drawdown, _, alpha, _ = calc_metrics(pfs, benchmark)
     
-    fitness_vals = fitness(sortino, sharpe, rel_drawdown, alpha, generation)
+    fitness_vals = fitness(sortino, sharpe, rel_drawdown, alpha)
     
     return list(zip(*fitness_vals))
 
-def run_population(pop, start_date="1989-12-31", end_date="2020-12-31", generation=0):
-    fitnesses = evaluate(pop, start_date, end_date, generation)
+def run_population(pop, start_date="1989-12-31", end_date="2020-12-31"):
+    fitnesses = evaluate(pop, start_date, end_date)
     
     for ind, fit in zip(pop, fitnesses):
         ind.fitness.values = fit
@@ -94,7 +93,7 @@ def show_population(pop):
         print(f"{i:<3} {sortino:<8.3f} {sharpe:<8.3f} {rel_dd:<8.3f} {alpha:<8.3f} "
               f"{ind[0]:<6} {ind[1]:<5} {ind[2]:<4}")
 
-def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date="1989-12-31", end_date="2020-12-31", generation=0):
+def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date="1989-12-31", end_date="2020-12-31"):
     pop_size = len(population)
     """
     Takes the current population and their fitness scores, then generates the next
@@ -133,7 +132,7 @@ def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date="19
         del child.fitness.values
         offspring.append(child)
     
-    offspring = run_population(offspring, start_date=start_date, end_date=end_date, generation=generation)
+    offspring = run_population(offspring, start_date=start_date, end_date=end_date)
 
     combined = population + offspring
     next_gen = toolbox.select(combined, k=pop_size)

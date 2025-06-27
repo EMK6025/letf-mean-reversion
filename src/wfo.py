@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 vbt.settings.array_wrapper['freq'] = '1D'
 
-seed = 50
+seed = 123
 random.seed(seed)
 np.random.seed(seed)
 
@@ -77,7 +77,7 @@ def walk_forward_optimization(start_date, end_date, max_time_minutes=10, stall_g
         
         print(f"\nGeneration {generation} (Elapsed: {elapsed_time/60:.1f}min)...")
         
-        population = go.create_next_generation(population, start_date=start_date, end_date=end_date, generation=generation)
+        population = go.create_next_generation(population, start_date=start_date, end_date=end_date)
         
         pareto_front = tools.sortNondominated(population, len(population), first_front_only=True)[0]
         current_hypervolume = calculate_hypervolume(pareto_front)
@@ -106,7 +106,7 @@ def walk_forward_optimization(start_date, end_date, max_time_minutes=10, stall_g
 
 def analyze_pareto_front(pareto_front, start_date):
     """
-    Analyze and display the Pareto front strategies.
+    Analyze and display the Pareto front strategies with enhanced visualization.
     """
     if not pareto_front:
         print("No valid strategies to analyze!")
@@ -116,8 +116,8 @@ def analyze_pareto_front(pareto_front, start_date):
     print("PARETO FRONT ANALYSIS")
     print("="*80)
     
-    print(f"\nTop strategies by each objective:")
-    
+    print(f"\nPareto Front Size: {len(pareto_front)} strategies")
+        
     best_sortino = max(pareto_front, key=lambda x: x.fitness.values[0] if x.fitness.values[0] > -1000 else -float('inf'))
     print(f"\nBest Sortino: {best_sortino.fitness.values[0]:.3f}")
     print(f"   Full fitness: S={best_sortino.fitness.values[0]:.3f}, Sh={best_sortino.fitness.values[1]:.3f}, "
@@ -128,7 +128,7 @@ def analyze_pareto_front(pareto_front, start_date):
     print(f"   Full fitness: S={best_sharpe.fitness.values[0]:.3f}, Sh={best_sharpe.fitness.values[1]:.3f}, "
           f"RD={best_sharpe.fitness.values[2]:.3f}, a={best_sharpe.fitness.values[3]:.3f}")
     
-    best_rel_dd = min(pareto_front, key=lambda x: x.fitness.values[2] if x.fitness.values[0] > 1000 else float('inf'))
+    best_rel_dd = min(pareto_front, key=lambda x: x.fitness.values[2] if x.fitness.values[0] > -1000 else float('inf'))
     print(f"\nBest Relative Drawdown: {best_rel_dd.fitness.values[2]:.3f}")
     print(f"   Full fitness: S={best_rel_dd.fitness.values[0]:.3f}, Sh={best_rel_dd.fitness.values[1]:.3f}, "
           f"RD={best_rel_dd.fitness.values[2]:.3f}, a={best_rel_dd.fitness.values[3]:.3f}")
@@ -139,7 +139,6 @@ def analyze_pareto_front(pareto_front, start_date):
           f"RD={best_alpha.fitness.values[2]:.3f}, a={best_alpha.fitness.values[3]:.3f}")
     
     def rank_score(ind):
-        
         vals = ind.fitness.values
         if (
             not all(math.isfinite(v) for v in vals) or
@@ -176,8 +175,8 @@ def analyze_pareto_front(pareto_front, start_date):
     print(f"   Sell Threshold: {sell_threshold}%")
     print(f"   Position Sizing: {[round(x, 3) for x in pos_sizing]}")
     
-    fig, axes = plt.subplots(2, 3, figsize=(13, 8))
-    fig.suptitle('Pareto Front Trade-offs', fontsize=14)
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    fig.suptitle('Pareto Front Trade-offs (Red = Pareto Optimal)', fontsize=14)
     
     objectives = ['Sortino', 'Sharpe', 'Rel DD', 'Alpha']
     obj_indices = [0, 1, 2, 3]
@@ -192,10 +191,11 @@ def analyze_pareto_front(pareto_front, start_date):
             x_vals = [ind.fitness.values[obj_indices[i]] for ind in pareto_front if ind.fitness.values[0] > -1000]
             y_vals = [ind.fitness.values[obj_indices[j]] for ind in pareto_front if ind.fitness.values[0] > -1000]
             
-            ax.scatter(x_vals, y_vals, alpha=0.6)
+            ax.scatter(x_vals, y_vals, alpha=0.8, color='red', s=50, label='Pareto Front')
             ax.set_xlabel(objectives[i])
             ax.set_ylabel(objectives[j])
             ax.grid(True, alpha=0.3)
+            ax.legend()
             
             plot_idx += 1
     
@@ -223,9 +223,10 @@ def analyze_pareto_front(pareto_front, start_date):
     )
     etf1_value = base.value()
     etf3_value = upro.value()
+    
+    print(f"\nRunning backtest for all {len(pareto_front)} Pareto front strategies...")
     params = []
-    pop = [balanced_strategy, best_sortino, best_sharpe, best_rel_dd, best_alpha]
-    for individual in pop:
+    for individual in pareto_front:
         window, entry, exit_, sell_threshold, *pos_sizing = individual
         params.append(Params(
             window=window,
@@ -237,22 +238,43 @@ def analyze_pareto_front(pareto_front, start_date):
         
     pfs = backtest.run(params, start_date, end_date)
 
-    combined = pd.DataFrame({
-        '1x': etf1_value,
-        '3x': etf3_value,
-        'balanced': pfs.iloc[0].value(),
-        'best_sortino': pfs.iloc[1].value(),
-        'best_sharpe': pfs.iloc[2].value(),
-        'best_rel_dd': pfs.iloc[3].value(),
-        'best_alpha': pfs.iloc[4].value(),
-    })
-
-    combined.plot(figsize=(12, 6), title='Simulated LETF Performance', logy=True)
-    plt.ylabel('Portfolio Value')
-    plt.grid(True)
+    # Create performance comparison plot
+    plt.figure(figsize=(14, 8))
+    
+    # Plot benchmarks first
+    plt.plot(etf1_value.index, etf1_value.values, 
+             label='1x SPX', color='blue', linewidth=2, alpha=0.8)
+    plt.plot(etf3_value.index, etf3_value.values, 
+             label='3x LETF', color='green', linewidth=2, alpha=0.8)
+    
+    # Plot all Pareto front strategies in red with varying transparency
+    for i, pf in enumerate(pfs):
+        alpha = 0.3 + 0.4 * (i / pfs.value().shape[1])  # Varying transparency
+        plt.plot(pf.value().index, pf.value().values, 
+                color='red', alpha=alpha, linewidth=1)
+    
+    # Add a single legend entry for Pareto strategies
+    plt.plot([], [], color='red', alpha=0.7, linewidth=2, 
+             label=f'Pareto Front ({len(pareto_front)} strategies)')
+    
+    plt.title('All Pareto Front Strategies vs Benchmarks', fontsize=14)
+    plt.ylabel('Portfolio Value (Log Scale)')
+    plt.xlabel('Date')
+    plt.yscale('log')
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
     plt.show()
 
-    plt.show()
+    # Summary statistics for Pareto front
+    final_values = [pf.value().iloc[-1] for pf in pfs]
+    annual_returns = [pf.annualized_return() for pf in pfs]
+    max_drawdowns = [pf.max_drawdown() for pf in pfs]
+    
+    print(f"\nPareto Front Performance Summary:")
+    print(f"Final Values - Min: ${min(final_values):,.0f}, Max: ${max(final_values):,.0f}, Median: ${np.median(final_values):,.0f}")
+    print(f"Annual Returns - Min: {min(annual_returns):.1%}, Max: {max(annual_returns):.1%}, Median: {np.median(annual_returns):.1%}")
+    print(f"Max Drawdowns - Min: {min(max_drawdowns):.1%}, Max: {max(max_drawdowns):.1%}, Median: {np.median(max_drawdowns):.1%}")
     
     return balanced_strategy
 
