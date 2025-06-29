@@ -1,3 +1,4 @@
+# src/go.py
 import pandas as pd
 import backtest
 from backtest import Params
