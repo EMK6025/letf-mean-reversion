@@ -10,6 +10,8 @@ from deap import base, creator, tools
 import random
 import warnings
 from fitness import fitness, calc_metrics
+from multiprocessing import Pool
+
 
 warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
 vbt.settings.array_wrapper['freq'] = '1D'
@@ -20,7 +22,7 @@ EXIT_MIN, EXIT_MAX = 50,100
 SELL_THRESH_MIN, SELL_THRESH_MAX = 0,100
 POS_SIZE_MIN, POS_SIZE_MAX = 0.0, 1.0
 
-creator.create("FitnessMulti", base.Fitness, weights=(1.0, 1.0, -1.0, 1.0))
+creator.create("FitnessMulti", base.Fitness, weights=(1.0, 1.0, -1.0, 1.0, -1.0))
 creator.create("Individual", list, fitness=creator.FitnessMulti)
 
 toolbox = base.Toolbox()
@@ -41,17 +43,15 @@ benchmark = Portfolio.from_holding(close=spxt, freq='1D')
 benchmark_returns = benchmark.returns()
 
 def create_individual():
-    ind = [
+    return [
         toolbox.attr_window(),
         toolbox.attr_entry(),
         toolbox.attr_exit(),
         toolbox.attr_sell_thresh(),
+        *sorted([toolbox.attr_pos_size() for _ in range(11)])
     ]
-    pos = sorted([toolbox.attr_pos_size() for _ in range(11)])
-    ind.extend(pos)
-    return ind
 
-def evaluate(pop, start_date, end_date):
+def evaluate(pop, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
     params = []
     for individual in pop:
         window, entry, exit_, sell_threshold, *pos_sizing = individual
@@ -62,25 +62,24 @@ def evaluate(pop, start_date, end_date):
             sell_threshold=sell_threshold,
             position_sizing=np.array(pos_sizing)
         ))
-        
-    pfs = backtest.run(params, start_date, end_date)
+
+    pfs = backtest.run(params, start_date=start_date, end_date=end_date, leverage=leverage)
     
-    sortino, sharpe, rel_drawdown, _, alpha, _ = calc_metrics(pfs, benchmark)
-    
-    fitness_vals = fitness(sortino, sharpe, rel_drawdown, alpha)
+    sortino, sharpe, rel_drawdown, _, alpha, _, position_stability = calc_metrics(pfs, benchmark, params)
+    fitness_vals = fitness(sortino, sharpe, rel_drawdown, alpha, position_stability)
     
     return list(zip(*fitness_vals))
 
-def run_population(pop, start_date="1989-12-31", end_date="2020-12-31"):
-    fitnesses = evaluate(pop, start_date, end_date)
-    
+def run_population(pop, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
+    fitnesses = evaluate(pop, start_date, end_date, leverage)
+
     for ind, fit in zip(pop, fitnesses):
         ind.fitness.values = fit
     return pop
 
-def create_initial_population(pop_size=50, start_date="1989-12-31", end_date="2020-12-31"):
+def create_initial_population(pop_size=50, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
     pop = toolbox.population(n=pop_size)
-    pop = run_population(pop, start_date=start_date, end_date=end_date)
+    pop = run_population(pop, start_date=start_date, end_date=end_date, leverage=leverage)
     return pop
 
 def show_population(pop):
@@ -94,7 +93,7 @@ def show_population(pop):
         print(f"{i:<3} {sortino:<8.3f} {sharpe:<8.3f} {rel_dd:<8.3f} {alpha:<8.3f} "
               f"{ind[0]:<6} {ind[1]:<5} {ind[2]:<4}")
 
-def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date="1989-12-31", end_date="2020-12-31"):
+def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
     pop_size = len(population)
     """
     Takes the current population and their fitness scores, then generates the next
@@ -133,7 +132,7 @@ def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date="19
         del child.fitness.values
         offspring.append(child)
     
-    offspring = run_population(offspring, start_date=start_date, end_date=end_date)
+    offspring = run_population(offspring, start_date=start_date, end_date=end_date, leverage=leverage)
 
     combined = population + offspring
     next_gen = toolbox.select(combined, k=pop_size)

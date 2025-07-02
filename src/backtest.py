@@ -94,14 +94,18 @@ def apply(price, prelim_entry, prelim_exit, size, sell_threshold):
 
     return size_array
 
-def run(params, start_date, end_date):
+def run(params, start_date, end_date, initial_capital=10000, leverage=3):
     engine = create_engine()
     df = connect(engine, "test_data")
     df['Date'] = pd.to_datetime(df['Date'])
     df.set_index("Date", inplace=True)
     df.sort_index(inplace=True)
     price = df["SPX Close"]
-    letf = df["3x LETF"]
+    if leverage < 2: 
+        leverage = 2
+    elif leverage > 4: 
+        leverage = 4
+    letf = df[f"{leverage}x LETF"]
     
     window_range = np.arange(3, 21)
     rsi = RSI.run(price, window=window_range, ewm=True)
@@ -163,6 +167,7 @@ def run(params, start_date, end_date):
     pf = Portfolio.from_orders(
         close      = letf,
         size       = size_changes,
+        init_cash  = initial_capital,
         size_type  = 'targetpercent',
         freq       = '1D'
     )
