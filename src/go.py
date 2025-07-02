@@ -10,8 +10,7 @@ from deap import base, creator, tools
 import random
 import warnings
 from fitness import fitness, calc_metrics
-from multiprocessing import Pool
-
+from config import FitnessConfig
 
 warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
 vbt.settings.array_wrapper['freq'] = '1D'
@@ -22,25 +21,26 @@ EXIT_MIN, EXIT_MAX = 50,100
 SELL_THRESH_MIN, SELL_THRESH_MAX = 0,100
 POS_SIZE_MIN, POS_SIZE_MAX = 0.0, 1.0
 
-creator.create("FitnessMulti", base.Fitness, weights=(1.0, 1.0, -1.0, 1.0, -1.0))
+global _fitness_config
+_fitness_config = FitnessConfig()
+    
+weights = tuple(_fitness_config.get_weights())
+creator.create("FitnessMulti", base.Fitness, weights=weights)
 creator.create("Individual", list, fitness=creator.FitnessMulti)
+    
+def set_fitness_config(config: FitnessConfig):
+    global _fitness_config
+    _fitness_config = config
+    creator.FitnessMulti.weights = tuple(_fitness_config.get_weights())
 
-toolbox = base.Toolbox()
-
-toolbox.register("attr_window", random.randint, WINDOW_MIN, WINDOW_MAX)
-toolbox.register("attr_entry", random.randint, ENTRY_MIN, ENTRY_MAX)
-toolbox.register("attr_exit", random.randint, EXIT_MIN, EXIT_MAX)
-toolbox.register("attr_sell_thresh", random.randint, SELL_THRESH_MIN, SELL_THRESH_MAX)
-toolbox.register("attr_pos_size", random.uniform, POS_SIZE_MIN, POS_SIZE_MAX)
-
-engine = create_engine()
-df = connect(engine, "test_data")
-df['Date'] = pd.to_datetime(df['Date'])
-df.set_index("Date", inplace=True)
-df.sort_index(inplace=True)
-spxt = df["SPX Close"]
-benchmark = Portfolio.from_holding(close=spxt, freq='1D')
-benchmark_returns = benchmark.returns()
+def get_fitness_config():
+    """Get the current fitness configuration"""
+    global _fitness_config
+    if _fitness_config is None:
+        # Use default configuration
+        _fitness_config = FitnessConfig()
+        set_fitness_config(_fitness_config)
+    return _fitness_config
 
 def create_individual():
     return [
@@ -52,6 +52,8 @@ def create_individual():
     ]
 
 def evaluate(pop, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
+    config = get_fitness_config()
+    
     params = []
     for individual in pop:
         window, entry, exit_, sell_threshold, *pos_sizing = individual
@@ -65,8 +67,11 @@ def evaluate(pop, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
 
     pfs = backtest.run(params, start_date=start_date, end_date=end_date, leverage=leverage)
     
-    sortino, sharpe, rel_drawdown, _, alpha, _, position_stability = calc_metrics(pfs, benchmark, params)
-    fitness_vals = fitness(sortino, sharpe, rel_drawdown, alpha, position_stability)
+    # Get all metrics
+    metrics_dict = calc_metrics(pfs, benchmark, params)
+    
+    # Calculate fitness using selected metrics
+    fitness_vals = fitness(metrics_dict, config)
     
     return list(zip(*fitness_vals))
 
@@ -77,7 +82,10 @@ def run_population(pop, start_date="1989-12-31", end_date="2020-12-31", leverage
         ind.fitness.values = fit
     return pop
 
-def create_initial_population(pop_size=50, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
+def create_initial_population(pop_size=50, start_date="1989-12-31", end_date="2020-12-31", leverage=3, fitness_config=None):
+    if fitness_config:
+        set_fitness_config(fitness_config)
+    
     pop = toolbox.population(n=pop_size)
     pop = run_population(pop, start_date=start_date, end_date=end_date, leverage=leverage)
     return pop
@@ -107,6 +115,8 @@ def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date="19
     Returns:
         List of individuals representing the next generation
     """
+    
+    pop_size = len(population)
     
     offspring = []
     for _ in range(pop_size):
@@ -139,6 +149,20 @@ def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date="19
     
     return next_gen
 
+engine = create_engine()
+df = connect(engine, "test_data")
+df['Date'] = pd.to_datetime(df['Date'])
+df.set_index("Date", inplace=True)
+df.sort_index(inplace=True)
+spxt = df["SPX Close"]
+benchmark = Portfolio.from_holding(close=spxt, freq='1D')
+
+toolbox = base.Toolbox()
+toolbox.register("attr_window", random.randint, WINDOW_MIN, WINDOW_MAX)
+toolbox.register("attr_entry", random.randint, ENTRY_MIN, ENTRY_MAX)
+toolbox.register("attr_exit", random.randint, EXIT_MIN, EXIT_MAX)
+toolbox.register("attr_sell_thresh", random.randint, SELL_THRESH_MIN, SELL_THRESH_MAX)
+toolbox.register("attr_pos_size", random.uniform, POS_SIZE_MIN, POS_SIZE_MAX)
 toolbox.register("individual", tools.initIterate, creator.Individual, create_individual)
 toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 toolbox.register("mate", tools.cxTwoPoint)

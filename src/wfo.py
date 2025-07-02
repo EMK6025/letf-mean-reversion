@@ -15,6 +15,7 @@ from backtest import Params
 from deap import tools
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
+from config import FitnessConfig
 
 warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -25,7 +26,8 @@ seed = 69
 random.seed(seed)
 np.random.seed(seed)
 
-def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations=10, pop_size=500, leverage=3):
+def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations=10, pop_size=500, leverage=3, fitness_config=None):
+    
     start_time = time.time()
     max_time_seconds = max_time_minutes * 60
     
@@ -35,13 +37,17 @@ def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations
     best_hypervolume = 0
     
     print("Generating initial population...")
-    population = go.create_initial_population(pop_size=pop_size)
+    population = go.create_initial_population(pop_size=pop_size, start_date=start_date, end_date=end_date, leverage=leverage)
     
     print("Calculating initial Pareto front...")
     pareto_front = tools.sortNondominated(population, len(population), first_front_only=True)[0]
     
-    ref_point = [-1.0, -1.0, 2.0, -0.5]  # sortino, sharpe, rel_dd, alpha
-    
+    # Dynamic reference point based on selected metrics
+    ref_point = []
+    for metric in fitness_config.selected_metrics:
+        params = fitness_config.available_metrics[metric]
+        ref_point.append(params[2])
+            
     def calculate_hypervolume(front):
         if not front:
             return 0
@@ -50,12 +56,13 @@ def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations
             if ind.fitness.values[0] > -1000:
                 vol = 1
                 for i, (val, ref) in enumerate(zip(ind.fitness.values, ref_point)):
-                    if i == 2:
+                    metric = fitness_config.selected_metrics[i]
+                    if fitness_config.is_minimize_metric(metric):
                         vol *= max(0, ref - val)
                     else:
                         vol *= max(0, val - ref)
                 volume += vol
-        return volume
+        return volume/len(front)
     
     print("Calculating initial hypervolume...")
     current_hypervolume = calculate_hypervolume(pareto_front)
@@ -172,7 +179,11 @@ def run_ensemble_backtest(strategies, start_date, end_date, initial_capital_per_
     return performance, portfolios
 
 def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sample_months=12, 
-                             max_time_minutes=5, stall_generations=5, pop_size=500, n_ensemble=10, leverage=3):
+                             max_time_minutes=5, stall_generations=5, pop_size=500, n_ensemble=10, leverage=3, fitness_config=None):
+
+    # Set fitness configuration if provided
+    if fitness_config:
+        go.set_fitness_config(fitness_config)
 
     start_date_dt = pd.to_datetime(start_date)
     end_date_dt = pd.to_datetime(end_date)
@@ -224,7 +235,8 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
             max_time_minutes=max_time_minutes,
             stall_generations=stall_generations,
             pop_size=pop_size, 
-            leverage=leverage
+            leverage=leverage,
+            fitness_config=fitness_config
         )
         
         # Select diverse strategies for ensemble
@@ -233,10 +245,9 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         print(f"\nEnsemble strategies for period {period+1}:")
         for i, strategy in enumerate(ensemble_strategies):
             window, entry, exit_, sell_threshold, *pos_sizing = strategy
-            print(f"   Strategy {i+1}: RSI={window}, Entry={entry}, Exit={exit_}, "
-                  f"Sell={sell_threshold}% \nPosition Sizing={[f'{x:.2f}' for x in pos_sizing]} \n Fitness=({strategy.fitness.values[0]:.2f}, "
-                  f"{strategy.fitness.values[1]:.2f}, {strategy.fitness.values[2]:.2f}, "
-                  f"{strategy.fitness.values[3]:.2f}, {strategy.fitness.values[4]:.2f})")
+            print(f"\nStrategy {i+1}: RSI={window}, Entry={entry}, Exit={exit_}, "
+                  f"Sell={sell_threshold}% \nPosition Sizing={[f'{x:.2f}' for x in pos_sizing]}")
+            print("Fitness: [" + ", ".join(f"{v:.2f}" for v in strategy.fitness.values) + "]")
         
         # Set initial capital per strategy
         if period == 0:
@@ -333,155 +344,6 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
             current_start = current_start + pd.DateOffset(months=out_sample_months)
     
     return wfo_results, all_ensemble_strategies, all_performances, cumulative_values
-
-def analyze_pareto_front(pareto_front, start_date):
-    """
-    Analyze and display the Pareto front strategies with enhanced visualization.
-    """
-    if not pareto_front:
-        print("No valid strategies to analyze!")
-        return
-    
-    print("\n" + "="*80)
-    print("PARETO FRONT ANALYSIS")
-    print("="*80)
-    
-    print(f"\nPareto Front Size: {len(pareto_front)} strategies")
-        
-    best_sortino = max(pareto_front, key=lambda x: x.fitness.values[0] if x.fitness.values[0] > -1000 else -float('inf'))
-    print(f"\nBest Sortino: {best_sortino.fitness.values[0]:.3f}")
-    print(f"   Full fitness: S={best_sortino.fitness.values[0]:.3f}, Sh={best_sortino.fitness.values[1]:.3f}, "
-          f"RD={best_sortino.fitness.values[2]:.3f}, a={best_sortino.fitness.values[3]:.3f}")
-    
-    best_sharpe = max(pareto_front, key=lambda x: x.fitness.values[1] if x.fitness.values[0] > -1000 else -float('inf'))
-    print(f"\nBest Sharpe: {best_sharpe.fitness.values[1]:.3f}")
-    print(f"   Full fitness: S={best_sharpe.fitness.values[0]:.3f}, Sh={best_sharpe.fitness.values[1]:.3f}, "
-          f"RD={best_sharpe.fitness.values[2]:.3f}, a={best_sharpe.fitness.values[3]:.3f}")
-    
-    best_rel_dd = min(pareto_front, key=lambda x: x.fitness.values[2] if x.fitness.values[0] > -1000 else float('inf'))
-    print(f"\nBest Relative Drawdown: {best_rel_dd.fitness.values[2]:.3f}")
-    print(f"   Full fitness: S={best_rel_dd.fitness.values[0]:.3f}, Sh={best_rel_dd.fitness.values[1]:.3f}, "
-          f"RD={best_rel_dd.fitness.values[2]:.3f}, a={best_rel_dd.fitness.values[3]:.3f}")
-    
-    best_alpha = max(pareto_front, key=lambda x: x.fitness.values[3] if x.fitness.values[0] > -1000 else -float('inf'))
-    print(f"\nBest Alpha: {best_alpha.fitness.values[3]:.3f}")
-    print(f"   Full fitness: S={best_alpha.fitness.values[0]:.3f}, Sh={best_alpha.fitness.values[1]:.3f}, "
-          f"RD={best_alpha.fitness.values[2]:.3f}, a={best_alpha.fitness.values[3]:.3f}")
-    
-    # Select diverse strategies for ensemble
-    diverse_strategies = select_diverse_strategies(pareto_front, n_strategies=10)
-    
-    print(f"\nDiverse Strategy Ensemble ({len(diverse_strategies)} strategies):")
-    for i, strategy in enumerate(diverse_strategies):
-        window, entry, exit_, sell_threshold, *pos_sizing = strategy
-        print(f"   Strategy {i+1}: RSI={window}, Entry={entry}, Exit={exit_}, Sell={sell_threshold}%, "
-              f"Fitness=({strategy.fitness.values[0]:.2f}, {strategy.fitness.values[1]:.2f}, "
-              f"{strategy.fitness.values[2]:.2f}, {strategy.fitness.values[3]:.2f})")
-    
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-    fig.suptitle('Pareto Front Trade-offs (Red = Pareto Optimal)', fontsize=14)
-    
-    objectives = ['Sortino', 'Sharpe', 'Rel DD', 'Alpha']
-    obj_indices = [0, 1, 2, 3]
-    
-    plot_idx = 0
-    for i in range(len(objectives)):
-        for j in range(i+1, len(objectives)):
-            row = plot_idx // 3
-            col = plot_idx % 3
-            ax = axes[row, col]
-            
-            x_vals = [ind.fitness.values[obj_indices[i]] for ind in pareto_front if ind.fitness.values[0] > -1000]
-            y_vals = [ind.fitness.values[obj_indices[j]] for ind in pareto_front if ind.fitness.values[0] > -1000]
-            
-            ax.scatter(x_vals, y_vals, alpha=0.8, color='red', s=50, label='Pareto Front')
-            
-            # Highlight diverse strategies in blue
-            diverse_x = [ind.fitness.values[obj_indices[i]] for ind in diverse_strategies if ind.fitness.values[0] > -1000]
-            diverse_y = [ind.fitness.values[obj_indices[j]] for ind in diverse_strategies if ind.fitness.values[0] > -1000]
-            ax.scatter(diverse_x, diverse_y, alpha=1.0, color='blue', s=100, marker='*', label='Ensemble')
-            
-            ax.set_xlabel(objectives[i])
-            ax.set_ylabel(objectives[j])
-            ax.grid(True, alpha=0.3)
-            ax.legend()
-            
-            plot_idx += 1
-    
-    if plot_idx < 6:
-        fig.delaxes(axes.flatten()[plot_idx])
-    
-    plt.tight_layout()
-
-    engine = create_engine()
-    df = connect(engine, "test_data")
-    df['Date'] = pd.to_datetime(df['Date'])
-    df.set_index("Date", inplace=True)
-    df.sort_index(inplace=True)
-    spxt = df["SPX Close"][start_date:end_date]
-    UPRO = df["3x LETF"][start_date:end_date]
-
-    base = Portfolio.from_holding(
-        close      = spxt,
-        freq       = '1D'
-    )
-    
-    upro = Portfolio.from_holding(
-        close = UPRO, 
-        freq = '1D'
-    )
-    etf1_value = base.value()
-    etf3_value = upro.value()
-    
-    print(f"\nRunning backtest for all {len(pareto_front)} Pareto front strategies...")
-    params = []
-    for individual in pareto_front:
-        window, entry, exit_, sell_threshold, *pos_sizing = individual
-        params.append(Params(
-            window=window,
-            entry=entry,
-            exit=exit_,
-            sell_threshold=sell_threshold,
-            position_sizing=np.array(pos_sizing)
-        ))
-        
-    pfs = backtest.run(params, start_date, end_date)
-
-    plt.figure(figsize=(14, 8))
-    
-    plt.plot(etf1_value.index, etf1_value.values, 
-             label='1x SPX', color='blue', linewidth=2, alpha=0.8)
-    plt.plot(etf3_value.index, etf3_value.values, 
-             label='3x LETF', color='green', linewidth=2, alpha=0.8)
-    
-    # Plot all Pareto front strategies in red with varying transparency
-    for i, pf in enumerate(pfs):
-        alpha = 0.3 + 0.4 * (i / pfs.value().shape[1])
-        plt.plot(pf.value().index, pf.value().values, 
-                color='red', alpha=alpha, linewidth=1)
-    
-    plt.plot([], [], color='red', alpha=0.7, linewidth=2, 
-             label=f'Pareto Front ({len(pareto_front)} strategies)')
-    
-    plt.title('All Pareto Front Strategies vs Benchmarks', fontsize=14)
-    plt.ylabel('Portfolio Value (Log Scale)')
-    plt.xlabel('Date')
-    plt.yscale('log')
-    plt.grid(True, alpha=0.3)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-    final_values = [pf.value().iloc[-1] for pf in pfs]
-    annual_returns = [pf.annualized_return() for pf in pfs]
-    max_drawdowns = [pf.max_drawdown() for pf in pfs]
-    
-    print(f"\nPareto Front Performance Summary:")
-    print(f"Final Values - Min: ${min(final_values):,.0f}, Max: ${max(final_values):,.0f}, Median: ${np.median(final_values):,.0f}")
-    print(f"Annual Returns - Min: {min(annual_returns):.1%}, Max: {max(annual_returns):.1%}, Median: {np.median(annual_returns):.1%}")
-    print(f"Max Drawdowns - Min: {min(max_drawdowns):.1%}, Max: {max(max_drawdowns):.1%}, Median: {np.median(max_drawdowns):.1%}")
-    
-    return diverse_strategies
 
 def analyze_wfo(wfo_results, all_ensemble_strategies, all_performances, cumulative_values, start_date, end_date):
     """
@@ -661,22 +523,33 @@ def analyze_wfo(wfo_results, all_ensemble_strategies, all_performances, cumulati
         print(f"Return/Drawdown Ratio: {-annualized_return/max_drawdown:.2f}")
 
 if __name__ == "__main__":
-    start_date = "1990-01-01"
-    end_date = "2010-12-31"
+    start_date = "1995-01-01"
+    end_date = "2009-12-31"
+    
+    # Example: Create custom fitness configuration
+    custom_config = FitnessConfig(
+        selected_metrics=['sharpe', 'alpha'],  # Remove position_stability
+        custom_weights={'sharpe': 2.0, 'alpha': 1.0},  # Give more weight to sortino and alpha
+        enable_bottom_percentile_filter=True,
+        bottom_percentile=10.0
+    )
     
     print("Starting Walk-Forward Optimization with Ensemble...")
     print(f"Full period: {start_date} to {end_date}")
+    print(f"Selected metrics: {custom_config.selected_metrics}")
+    print(f"Weights: {custom_config.get_weights()}")
     
     wfo_results, all_ensemble_strategies, all_performances, cumulative_values = walk_forward_optimization(
         start_date=start_date,
         end_date=end_date,
         in_sample_months=120,
-        out_sample_months=12,
-        max_time_minutes=5,
+        out_sample_months=24,
+        max_time_minutes=20,
         stall_generations=10,
-        pop_size=750,
+        pop_size=2500,
         n_ensemble=10,
-        leverage=3
+        leverage=3,
+        fitness_config=custom_config
     )
     
     analyze_wfo(wfo_results, all_ensemble_strategies, all_performances, cumulative_values, start_date, end_date)
