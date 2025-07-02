@@ -24,6 +24,9 @@ def fitness(sortino, sharpe, rel_drawdown, alpha, position_stability):
     """
     removes non-pareto front individuals in the bottom 10% performers in any metric
     """
+
+    rel_drawdown = rel_drawdown.clip(lower=0.4) 
+    
     sort_arr = sortino.to_numpy()
     shar_arr = sharpe.to_numpy()
     dd_arr   = rel_drawdown.to_numpy()
@@ -37,7 +40,7 @@ def fitness(sortino, sharpe, rel_drawdown, alpha, position_stability):
         np.isfinite(alpha) & 
         np.isfinite(position_stability)
     )
-    
+        
     sortino_10th = np.percentile(sortino[valid_mask], 10)
     sharpe_10th = np.percentile(sharpe[valid_mask], 10)
     alpha_10th = np.percentile(alpha[valid_mask], 10)

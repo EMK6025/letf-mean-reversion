@@ -102,7 +102,6 @@ def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations
     return pareto_front, generation, hypervolume_history
 
 def select_diverse_strategies(pareto_front, n_strategies=10):
-    # does not care about position sizing for diversity
     if len(pareto_front) <= n_strategies:
         print(f"Pareto front has only {len(pareto_front)} strategies, using all of them")
         return pareto_front
@@ -110,8 +109,8 @@ def select_diverse_strategies(pareto_front, n_strategies=10):
     # Extract strategy parameters for clustering (only RSI window, entry, exit, sell threshold)
     strategy_params = []
     for individual in pareto_front:
-        window, entry, exit_, sell_threshold, *pos_sizing = individual
-        params = [window, entry, exit_, sell_threshold]
+        window, entry, exit, sell_threshold, *pos_sizing = individual
+        params = [window, entry, exit, sell_threshold] + pos_sizing
         strategy_params.append(params)
     
     strategy_params = np.array(strategy_params)
@@ -235,7 +234,7 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         for i, strategy in enumerate(ensemble_strategies):
             window, entry, exit_, sell_threshold, *pos_sizing = strategy
             print(f"   Strategy {i+1}: RSI={window}, Entry={entry}, Exit={exit_}, "
-                  f"Sell={sell_threshold}%, Position Sizing={pos_sizing}, Fitness=({strategy.fitness.values[0]:.2f}, "
+                  f"Sell={sell_threshold}% \nPosition Sizing={[f'{x:.2f}' for x in pos_sizing]} \n Fitness=({strategy.fitness.values[0]:.2f}, "
                   f"{strategy.fitness.values[1]:.2f}, {strategy.fitness.values[2]:.2f}, "
                   f"{strategy.fitness.values[3]:.2f}, {strategy.fitness.values[4]:.2f})")
         
