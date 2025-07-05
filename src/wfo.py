@@ -15,7 +15,7 @@ from backtest import Params
 from deap import tools
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-from config import FitnessConfig
+from fitness import FitnessConfig
 
 warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
 warnings.filterwarnings("ignore", category=RuntimeWarning)

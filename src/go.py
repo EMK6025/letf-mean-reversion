@@ -9,8 +9,7 @@ import vectorbt as vbt
 from deap import base, creator, tools
 import random
 import warnings
-from fitness import fitness, calc_metrics
-from config import FitnessConfig
+from fitness import fitness, calc_metrics, FitnessConfig
 
 warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
 vbt.settings.array_wrapper['freq'] = '1D'
