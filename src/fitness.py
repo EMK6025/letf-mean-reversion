@@ -61,6 +61,7 @@ class FitnessConfig:
         return len(self.selected_metrics)
 
 def calc_metrics(pfs, benchmark, params):
+    """Calculate all available metrics"""
     returns = pfs.returns()
     sortino = returns.vbt.returns.sortino_ratio()
     sharpe = returns.vbt.returns.sharpe_ratio()
@@ -71,74 +72,120 @@ def calc_metrics(pfs, benchmark, params):
     position_stability = [np.sum(p.position_sizing ** 2) for p in params]
     position_stability = Series(position_stability, index=sortino.index)
 
-    return sortino, sharpe, rel_drawdown, drawdown, alpha, annual_return, position_stability
-
-def fitness(sortino, sharpe, rel_drawdown, alpha, position_stability):
-    # removes non-pareto front individuals in the bottom 10% performers in any metric
-
-    rel_drawdown = rel_drawdown.clip(lower=0.4) 
+    # Return dictionary of all metrics
+    metrics = {
+        'sortino': sortino,
+        'sharpe': sharpe,
+        'rel_drawdown': rel_drawdown,
+        'drawdown': drawdown,
+        'alpha': alpha,
+        'annual_return': annual_return,
+        'position_stability': position_stability
+    }
     
-    sort_arr = sortino.to_numpy()
-    shar_arr = sharpe.to_numpy()
-    dd_arr   = rel_drawdown.to_numpy()
-    alpha_arr= alpha.to_numpy()
-    pos_stab_arr = position_stability.to_numpy()
+    return metrics
 
-    valid_mask = (
-        np.isfinite(sortino) & 
-        np.isfinite(sharpe) & 
-        np.isfinite(rel_drawdown) &
-        np.isfinite(alpha) & 
-        np.isfinite(position_stability)
-    )
-        
-    sortino_10th = np.percentile(sortino[valid_mask], 10)
-    sharpe_10th = np.percentile(sharpe[valid_mask], 10)
-    alpha_10th = np.percentile(alpha[valid_mask], 10)
-    rel_dd_90th = np.percentile(rel_drawdown[valid_mask], 90)  # 90th percentile for drawdown (higher is worse)
-    pos_stab_90th = np.percentile(position_stability[valid_mask], 90)  # 90th percentile for position stability (higher is worse)
+def fitness(metrics_dict, config: FitnessConfig):
+    """
+    Flexible fitness function that works with configurable metrics
+    """
+    # Apply rel_drawdown clipping if it's selected
+    if 'rel_drawdown' in metrics_dict:
+        metrics_dict['rel_drawdown'] = metrics_dict['rel_drawdown'].clip(lower=0.4)
     
-    bottom_10_mask = (
-        (sortino < sortino_10th) |
-        (sharpe < sharpe_10th) |
-        (rel_drawdown > rel_dd_90th) |
-        (alpha < alpha_10th) |
-        (position_stability > pos_stab_90th)
-    )
+    # Extract selected metrics
+    selected_data = {}
+    for metric in config.selected_metrics:
+        if metric not in metrics_dict:
+            raise ValueError(f"Metric '{metric}' not found in calculated metrics")
+        selected_data[metric] = metrics_dict[metric]
+    
+    # Convert to numpy arrays
+    metric_arrays = {}
+    for metric, data in selected_data.items():
+        metric_arrays[metric] = data.to_numpy()
+    
+    # Create validity mask
+    valid_mask = np.ones(len(next(iter(metric_arrays.values()))), dtype=bool)
+    for arr in metric_arrays.values():
+        valid_mask &= np.isfinite(arr)
+    
+    # Apply bottom percentile filtering if enabled
+    if config.enable_bottom_percentile_filter:
+        bottom_mask = np.zeros_like(valid_mask)
         
-    def find_pareto_mask(sort_arr, shar_arr, dd_arr, alpha_arr, pos_stab_arr):
-        sort_comp = sort_arr[:, np.newaxis] >= sort_arr[np.newaxis, :]
-        shar_comp = shar_arr[:, np.newaxis] >= shar_arr[np.newaxis, :]
-        alpha_comp = alpha_arr[:, np.newaxis] >= alpha_arr[np.newaxis, :]
-        dd_comp = dd_arr[:, np.newaxis] <= dd_arr[np.newaxis, :]
-        pos_comp = pos_stab_arr[:, np.newaxis] <= pos_stab_arr[np.newaxis, :]
+        for metric in config.selected_metrics:
+            arr = metric_arrays[metric]
+            is_minimize = config.is_minimize_metric(metric)
+            
+            if is_minimize:
+                # For minimize metrics, filter out top percentile (worst performers)
+                threshold = np.percentile(arr[valid_mask], config.top_percentile)
+                bottom_mask |= (arr > threshold)
+            else:
+                # For maximize metrics, filter out bottom percentile (worst performers)  
+                threshold = np.percentile(arr[valid_mask], config.bottom_percentile)
+                bottom_mask |= (arr < threshold)
+    else:
+        bottom_mask = np.zeros_like(valid_mask)
+    
+    # Find Pareto front
+    def find_pareto_mask(*arrays):
+        n = len(arrays[0])
+        pareto_mask = np.ones(n, dtype=bool)
         
-        # Check if i dominates j for all pairs
-        better_or_eq = sort_comp & shar_comp & alpha_comp & dd_comp & pos_comp
+        for i in range(n):
+            if not pareto_mask[i]:
+                continue
+                
+            for j in range(n):
+                if i == j or not pareto_mask[j]:
+                    continue
+                    
+                # Check if j dominates i
+                dominates = True
+                strictly_better = False
+                
+                for k, (arr, metric) in enumerate(zip(arrays, config.selected_metrics)):
+                    is_minimize = config.is_minimize_metric(metric)
+                    
+                    if is_minimize:
+                        if arr[j] > arr[i]:  # j is worse than i
+                            dominates = False
+                            break
+                        elif arr[j] < arr[i]:  # j is better than i
+                            strictly_better = True
+                    else:
+                        if arr[j] < arr[i]:  # j is worse than i
+                            dominates = False
+                            break
+                        elif arr[j] > arr[i]:  # j is better than i
+                            strictly_better = True
+                
+                if dominates and strictly_better:
+                    pareto_mask[i] = False
+                    break
         
-        # Check strict dominance
-        strictly_better = (
-            (sort_arr[:, np.newaxis] > sort_arr[np.newaxis, :]) |
-            (shar_arr[:, np.newaxis] > shar_arr[np.newaxis, :]) |
-            (alpha_arr[:, np.newaxis] > alpha_arr[np.newaxis, :]) |
-            (dd_arr[:, np.newaxis] < dd_arr[np.newaxis, :]) |
-            (pos_stab_arr[:, np.newaxis] < pos_stab_arr[np.newaxis, :])
-        )
-        
-        dominates = better_or_eq & strictly_better
-        
-        pareto_mask = ~np.any(dominates, axis=0)
         return pareto_mask
     
-    pareto_mask = find_pareto_mask(sort_arr, shar_arr, dd_arr, alpha_arr, pos_stab_arr)
-            
-    # Combine validity and bottom 10% filtering
-    final_mask = valid_mask & (~bottom_10_mask | pareto_mask)
+    pareto_mask = find_pareto_mask(*[metric_arrays[m] for m in config.selected_metrics])
     
-    fitness_sortino = np.where(final_mask, sortino, -1000)
-    fitness_sharpe = np.where(final_mask, sharpe, -1000)
-    fitness_rel_drawdown = np.where(final_mask, rel_drawdown, 1000)
-    fitness_alpha = np.where(final_mask, alpha, -1000)
-    fitness_position_stability = np.where(final_mask, position_stability, 1000)
-
-    return (fitness_sortino, fitness_sharpe, fitness_rel_drawdown, fitness_alpha, fitness_position_stability)
+    # Combine validity and filtering
+    final_mask = valid_mask & (~bottom_mask | pareto_mask)
+    
+    # Create fitness values
+    fitness_values = []
+    for metric in config.selected_metrics:
+        arr = metric_arrays[metric]
+        is_minimize = config.is_minimize_metric(metric)
+        
+        if is_minimize:
+            # For minimize metrics, use large positive value for invalid
+            fitness_arr = np.where(final_mask, arr, 1000)
+        else:
+            # For maximize metrics, use large negative value for invalid
+            fitness_arr = np.where(final_mask, arr, -1000)
+            
+        fitness_values.append(fitness_arr)
+    
+    return tuple(fitness_values)
