@@ -21,9 +21,11 @@ class FitnessConfig:
         'alpha': (1.0, False, -.5),             # Higher is better
         'position_stability': (-1.0, True, 1.0), # Lower is better
         'drawdown': (-1.0, True, -1.0),          # Lower is better
-        'annual_return': (1.0, False, -1.0)      # Higher is better
-    }
-    
+        'annual_return': (1.0, False, -1.0),     # Higher is better
+        'pain_ratio': (1.0, False, -1.0),       # Higher is better
+        'var': (-1.0, True, 1.0),               # Lower is better
+        'information_ratio': (1.0, False, -1.0)  # Higher is better
+    }    
     selected_metrics: List[str] = None
     
     custom_weights: Dict[str, float] = None
@@ -63,6 +65,9 @@ class FitnessConfig:
 def calc_metrics(pfs, benchmark, params):
     """Calculate all available metrics"""
     returns = pfs.returns()
+    benchmark_returns = benchmark.returns()
+    common_idx = returns.index.intersection(benchmark_returns.index)
+    aligned_bench  = benchmark_returns.loc[common_idx] 
     sortino = returns.vbt.returns.sortino_ratio()
     sharpe = returns.vbt.returns.sharpe_ratio()
     rel_drawdown = pfs.max_drawdown() / benchmark.max_drawdown()
@@ -71,6 +76,12 @@ def calc_metrics(pfs, benchmark, params):
     annual_return = pfs.annualized_return()
     position_stability = [np.sum(p.position_sizing ** 2) for p in params]
     position_stability = Series(position_stability, index=sortino.index)
+    dd = pfs.value().vbt.drawdown().abs()
+    ulcer = np.sqrt(dd.pow(2).mean(axis=0))
+    cagr = pfs.annualized_return()
+    pain_ratio = (cagr / ulcer).fillna(0)
+    var_95 = returns.vbt.returns.value_at_risk(cutoff=0.05)
+    information_ratio = returns.vbt.returns.information_ratio(benchmark_rets=aligned_bench)
 
     # Return dictionary of all metrics
     metrics = {
@@ -80,10 +91,14 @@ def calc_metrics(pfs, benchmark, params):
         'drawdown': drawdown,
         'alpha': alpha,
         'annual_return': annual_return,
-        'position_stability': position_stability
+        'position_stability': position_stability,
+        'pain_ratio': pain_ratio,
+        'var': var_95,
+        'information_ratio': information_ratio
     }
     
     return metrics
+
 
 def fitness(metrics_dict, config: FitnessConfig):
     """
@@ -132,41 +147,40 @@ def fitness(metrics_dict, config: FitnessConfig):
     # Find Pareto front
     def find_pareto_mask(*arrays):
         n = len(arrays[0])
-        pareto_mask = np.ones(n, dtype=bool)
+        if n == 0:
+            return np.array([], dtype=bool)
         
-        for i in range(n):
-            if not pareto_mask[i]:
-                continue
-                
-            for j in range(n):
-                if i == j or not pareto_mask[j]:
-                    continue
-                    
-                # Check if j dominates i
-                dominates = True
-                strictly_better = False
-                
-                for k, (arr, metric) in enumerate(zip(arrays, config.selected_metrics)):
-                    is_minimize = config.is_minimize_metric(metric)
-                    
-                    if is_minimize:
-                        if arr[j] > arr[i]:  # j is worse than i
-                            dominates = False
-                            break
-                        elif arr[j] < arr[i]:  # j is better than i
-                            strictly_better = True
-                    else:
-                        if arr[j] < arr[i]:  # j is worse than i
-                            dominates = False
-                            break
-                        elif arr[j] > arr[i]:  # j is better than i
-                            strictly_better = True
-                
-                if dominates and strictly_better:
-                    pareto_mask[i] = False
-                    break
+        # Stack arrays and transpose to get shape (n_points, n_objectives)
+        objectives = np.column_stack(arrays)
+        
+        # Create minimize/maximize mask for each objective
+        minimize_mask = np.array([config.is_minimize_metric(metric) for metric in config.selected_metrics])
+        
+        # Convert maximize objectives to minimize by negating
+        objectives_normalized = objectives.copy()
+        objectives_normalized[:, ~minimize_mask] *= -1
+        
+        # Fully vectorized Pareto dominance check
+        # Create 3D array: (n_points, n_points, n_objectives)
+        # diff[i, j, k] = objectives_normalized[j, k] - objectives_normalized[i, k]
+        diff = objectives_normalized[np.newaxis, :, :] - objectives_normalized[:, np.newaxis, :]
+        
+        # For each pair (i,j), check if j dominates i
+        # j dominates i if all differences <= 0 and at least one < 0
+        weakly_better = np.all(diff <= 0, axis=2)  # Shape: (n_points, n_points)
+        strictly_better = np.any(diff < 0, axis=2)  # Shape: (n_points, n_points)
+        
+        dominates = weakly_better & strictly_better
+        
+        # Remove self-comparison (diagonal)
+        np.fill_diagonal(dominates, False)
+        
+        # Point i is Pareto optimal if no other point dominates it
+        # dominates[i, :] tells us which points dominate point i
+        pareto_mask = ~np.any(dominates, axis=1)
         
         return pareto_mask
+
     
     pareto_mask = find_pareto_mask(*[metric_arrays[m] for m in config.selected_metrics])
     
