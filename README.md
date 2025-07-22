@@ -28,7 +28,10 @@ def create_engine():
     return _sa_create_engine(f"postgresql+psycopg://{username}:{password}@localhost:5432/letf_data")
 
 def connect(engine, table_name = "test_data"):
-    return pd.read_sql(f"SELECT * FROM {table_name}", engine)
+    df = pd.read_sql(f"SELECT * FROM {table_name}", engine)
+    df.set_index("Date", inplace=True)
+    df.sort_index(inplace=True)
+    return df
 ```
 
 In a separate cmd line tab, start up Postgress if needed:

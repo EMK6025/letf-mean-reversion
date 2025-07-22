@@ -8,8 +8,6 @@ from sql_functions import update_sql_table
 def main():
     engine = create_engine()
     df = connect(engine, "test_data")
-    df.set_index("Date", inplace=True)
-    df.sort_index(inplace=True)
     series = pd.to_numeric(df["SPX Close"], errors="coerce").astype(float)
 
     windows = np.arange(3, 21)

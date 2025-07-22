@@ -7,9 +7,7 @@ def theoretical_change(df, X):
 def main():
     engine = create_engine()
     df = connect(engine, "test_data")
-    df.set_index("Date", inplace=True)
-    df.sort_index(inplace=True)
-    
+
     df["Theoretical 3x LETF"] = theoretical_change(df, 3)
     temp = df["3x LETF Change"].notna() & df["Theoretical 3x LETF"].notna()
     df.loc[temp, "3x Error"] = ( df["3x LETF Change"] - df["Theoretical 3x LETF"] )

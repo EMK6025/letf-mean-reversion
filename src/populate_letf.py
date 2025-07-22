@@ -4,7 +4,7 @@ from engine import create_engine, connect
 from sql_functions import update_sql_table
 
 def theoretical_return(p_series: Series, start_val): 
-    # actual change
+    # actual stock prices
     factors = 1 + p_series / 100
     factors.iloc[0] = start_val
     return factors.cumprod()
@@ -12,8 +12,6 @@ def theoretical_return(p_series: Series, start_val):
 def main():
     engine = create_engine()
     df = connect(engine, "test_data")
-    df.set_index("Date", inplace=True)
-    df.sort_index(inplace=True)
     
     start_val = df["SPX Close"].iloc[0]
     df["2x LETF"] = theoretical_return(df["2x LETF Change"], start_val)

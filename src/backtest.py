@@ -1,4 +1,3 @@
-# src/backtest.py
 import pandas as pd
 from engine import create_engine, connect
 import numpy as np
@@ -97,9 +96,7 @@ def apply(price, prelim_entry, prelim_exit, size, sell_threshold):
 def run(params, start_date, end_date, initial_capital=10000, leverage=3):
     engine = create_engine()
     df = connect(engine, "test_data")
-    df['Date'] = pd.to_datetime(df['Date'])
-    df.set_index("Date", inplace=True)
-    df.sort_index(inplace=True)
+    
     price = df["SPX Close"]
     if leverage < 2: 
         leverage = 2

@@ -1,4 +1,3 @@
-# src/go.py
 import pandas as pd
 import backtest
 from backtest import Params
@@ -36,7 +35,7 @@ def get_fitness_config():
     """Get the current fitness configuration"""
     global _fitness_config
     if _fitness_config is None:
-        # Use default configuration
+        # use default configuration
         _fitness_config = FitnessConfig()
         set_fitness_config(_fitness_config)
     return _fitness_config
@@ -66,10 +65,10 @@ def evaluate(pop, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
 
     pfs = backtest.run(params, start_date=start_date, end_date=end_date, leverage=leverage)
     
-    # Get all metrics
+    # get all metrics
     metrics_dict = calc_metrics(pfs, benchmark, params)
     
-    # Calculate fitness using selected metrics
+    # calculate fitness using selected metrics
     fitness_vals = fitness(metrics_dict, config)
     
     return list(zip(*fitness_vals))
@@ -150,9 +149,6 @@ def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date="19
 
 engine = create_engine()
 df = connect(engine, "test_data")
-df['Date'] = pd.to_datetime(df['Date'])
-df.set_index("Date", inplace=True)
-df.sort_index(inplace=True)
 spxt = df["SPX Close"]
 benchmark = Portfolio.from_holding(close=spxt, freq='1D')
 

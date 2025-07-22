@@ -1,4 +1,3 @@
-# src/wfo.py
 import go
 from engine import create_engine, connect
 from vectorbt import Portfolio
@@ -42,7 +41,7 @@ def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations
     print("Calculating initial Pareto front...")
     pareto_front = tools.sortNondominated(population, len(population), first_front_only=True)[0]
     
-    # Dynamic reference point based on selected metrics
+    # dynamic reference point based on selected metrics
     ref_point = []
     for metric in fitness_config.selected_metrics:
         params = fitness_config.available_metrics[metric]
@@ -113,7 +112,7 @@ def select_diverse_strategies(pareto_front, n_strategies=10):
         print(f"Pareto front has only {len(pareto_front)} strategies, using all of them")
         return pareto_front
     
-    # Extract strategy parameters for clustering (only RSI window, entry, exit, sell threshold)
+    # extract strategy parameters for clustering (only RSI window, entry, exit, sell threshold)
     strategy_params = []
     for individual in pareto_front:
         window, entry, exit, sell_threshold, *pos_sizing = individual
@@ -122,15 +121,15 @@ def select_diverse_strategies(pareto_front, n_strategies=10):
     
     strategy_params = np.array(strategy_params)
     
-    # Standardize the parameters
+    # standardize the parameters
     scaler = StandardScaler()
     strategy_params_scaled = scaler.fit_transform(strategy_params)
     
-    # Use K-means clustering to find diverse strategies
+    # use K-means clustering to find diverse strategies
     kmeans = KMeans(n_clusters=n_strategies, random_state=seed, n_init=10)
     cluster_labels = kmeans.fit_predict(strategy_params_scaled)
     
-    # Select one strategy from each cluster (closest to cluster center)
+    # select one strategy from each cluster (closest to cluster center)
     diverse_strategies = []
     for cluster_id in range(n_strategies):
         cluster_mask = cluster_labels == cluster_id
@@ -140,11 +139,11 @@ def select_diverse_strategies(pareto_front, n_strategies=10):
         cluster_strategies = strategy_params_scaled[cluster_mask]
         cluster_center = kmeans.cluster_centers_[cluster_id]
         
-        # Find the strategy closest to the cluster center
+        # find the strategy closest to the cluster center
         distances = np.linalg.norm(cluster_strategies - cluster_center, axis=1)
         closest_idx = np.argmin(distances)
         
-        # Get the original strategy index
+        # get the original strategy index
         cluster_indices = np.where(cluster_mask)[0]
         original_idx = cluster_indices[closest_idx]
         
@@ -172,7 +171,7 @@ def run_ensemble_backtest(strategies, start_date, end_date, initial_capital_per_
             position_sizing=np.array(pos_sizing)
         ))
     
-    # Run backtests for all strategies
+    # run backtests for all strategies
     portfolios = backtest.run(params, start_date, end_date, initial_capital_per_strategy, leverage=leverage)
     
     performance = portfolios.value().ffill().sum(axis=1)
@@ -181,7 +180,7 @@ def run_ensemble_backtest(strategies, start_date, end_date, initial_capital_per_
 def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sample_months=12, 
                              max_time_minutes=5, stall_generations=5, pop_size=500, n_ensemble=10, leverage=3, fitness_config=None):
 
-    # Set fitness configuration if provided
+    # set fitness configuration if provided
     if fitness_config:
         go.set_fitness_config(fitness_config)
 
@@ -198,9 +197,6 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
     
     engine = create_engine()
     df = connect(engine, "test_data")
-    df['Date'] = pd.to_datetime(df['Date'])
-    df.set_index("Date", inplace=True)
-    df.sort_index(inplace=True)
     
     print(f"\n{'='*80}")
     print(f"WALK-FORWARD OPTIMIZATION WITH ENSEMBLE")
@@ -239,7 +235,7 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
             fitness_config=fitness_config
         )
         
-        # Select diverse strategies for ensemble
+        # select diverse strategies for ensemble
         ensemble_strategies = select_diverse_strategies(pareto_front, n_strategies=n_ensemble)
         
         print(f"\nEnsemble strategies for period {period+1}:")
@@ -249,7 +245,7 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
                   f"Sell={sell_threshold}% \nPosition Sizing={[f'{x:.2f}' for x in pos_sizing]}")
             print("Fitness: [" + ", ".join(f"{v:.2f}" for v in strategy.fitness.values) + "]")
         
-        # Set initial capital per strategy
+        # set initial capital per strategy
         if period == 0:
             in_sample_end_dt = pd.to_datetime(in_sample_end_str)
             spx_after_date = df["SPX Close"][in_sample_end_dt:].iloc[:5]
@@ -269,7 +265,7 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
             print(f"   Total available capital: ${total_capital:.2f}")
             print(f"   Capital per strategy: ${capital_per_strategy:.2f}")
         
-        # Run ensemble backtest on out-of-sample period
+        # run ensemble backtest on out-of-sample period
         combined_values, original_portfolios = run_ensemble_backtest(
             ensemble_strategies, 
             in_sample_end_str, 
@@ -285,22 +281,22 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         cumulative_values.append(combined_values)
         current_portfolio_value = combined_values.iloc[-1]
         
-        # Calculate performance metrics for the ensemble
+        # calculate performance metrics for the ensemble
         period_return = (combined_values.iloc[-1] / combined_values.iloc[0]) - 1
         
-        # Calculate other metrics using the combined series
+        # calculate other metrics using the combined series
         combined_returns = combined_values.pct_change().dropna()
         if len(combined_returns) > 0:
             annualized_return = (1 + combined_returns.mean()) ** 252 - 1
             volatility = combined_returns.std() * np.sqrt(252)
             sharpe_ratio = annualized_return / volatility if volatility > 0 else 0
             
-            # Calculate max drawdown
+            # calculate max drawdown
             rolling_max = combined_values.cummax()
             drawdown = (combined_values - rolling_max) / rolling_max
             max_drawdown = drawdown.min()
             
-            # Calculate Sortino ratio
+            # calculate Sortino ratio
             negative_returns = combined_returns[combined_returns < 0]
             downside_std = negative_returns.std() * np.sqrt(252) if len(negative_returns) > 0 else 0
             sortino_ratio = annualized_return / downside_std if downside_std > 0 else 0
@@ -370,7 +366,7 @@ def analyze_wfo(wfo_results, all_ensemble_strategies, all_performances, cumulati
     print(f"Average Sortino ratio: {np.mean(sortinos):.3f}")
     print(f"Win rate (periods with positive returns): {sum(r > 0 for r in period_returns) / len(period_returns):.2%}")
     
-    # Analyze strategy diversity across periods
+    # analyze strategy diversity across periods
     all_windows = []
     all_entries = []
     all_exits = []
@@ -390,14 +386,11 @@ def analyze_wfo(wfo_results, all_ensemble_strategies, all_performances, cumulati
     print(f"Exit Threshold - Mean: {np.mean(all_exits):.1f}, Std: {np.std(all_exits):.1f}, Range: {min(all_exits):.1f}-{max(all_exits):.1f}")
     print(f"Sell Threshold - Mean: {np.mean(all_sell_thresholds):.1f}, Std: {np.std(all_sell_thresholds):.1f}, Range: {min(all_sell_thresholds):.1f}-{max(all_sell_thresholds):.1f}")
     
-    fig, axes = plt.subplots(3, 1, figsize=(14, 18))
+    _, axes = plt.subplots(3, 1, figsize=(14, 18))
     
     ax = axes[0]
     engine = create_engine()
     df = connect(engine, "test_data")
-    df['Date'] = pd.to_datetime(df['Date'])
-    df.set_index("Date", inplace=True)
-    df.sort_index(inplace=True)
     
     first_out_sample_start = wfo_results[0]['in_sample_end']
     
@@ -439,11 +432,11 @@ def analyze_wfo(wfo_results, all_ensemble_strategies, all_performances, cumulati
     ax.legend()
     ax.set_yscale('log')
     
-    # Parameter diversity visualization
+    # parameter diversity visualization
     ax = axes[1]
     periods = list(range(1, len(wfo_results) + 1))
     
-    # Calculate average parameters per period
+    # calculate average parameters per period
     avg_windows = [np.mean([s[0] for s in ensemble]) for ensemble in all_ensemble_strategies]
     avg_entries = [np.mean([s[1] for s in ensemble]) for ensemble in all_ensemble_strategies]
     avg_exits = [np.mean([s[2] for s in ensemble]) for ensemble in all_ensemble_strategies]
@@ -522,14 +515,14 @@ def analyze_wfo(wfo_results, all_ensemble_strategies, all_performances, cumulati
         print(f"Max Drawdown: {max_drawdown:.2%}")
         print(f"Return/Drawdown Ratio: {-annualized_return/max_drawdown:.2f}")
 
-if __name__ == "__main__":
+def main():
     start_date = "1995-01-01"
     end_date = "2009-12-31"
     
-    # Example: Create custom fitness configuration
+    # create custom fitness configuration
     custom_config = FitnessConfig(
-        selected_metrics=['sharpe', 'alpha'],  # Remove position_stability
-        custom_weights={'sharpe': 2.0, 'alpha': 1.0},  # Give more weight to sortino and alpha
+        selected_metrics=['sharpe', 'alpha'],  # remove position_stability
+        custom_weights={'sharpe': 1.0, 'alpha': 3.0},  # give more weight to alpha
         enable_bottom_percentile_filter=True,
         bottom_percentile=10.0
     )
@@ -553,3 +546,6 @@ if __name__ == "__main__":
     )
     
     analyze_wfo(wfo_results, all_ensemble_strategies, all_performances, cumulative_values, start_date, end_date)
+
+if __name__ == "__main__":
+    main()

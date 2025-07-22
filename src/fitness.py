@@ -1,4 +1,3 @@
-# src/fitness.py
 import numpy as np
 import vectorbt as vbt
 import warnings
@@ -99,7 +98,6 @@ def calc_metrics(pfs, benchmark, params):
     
     return metrics
 
-
 def fitness(metrics_dict, config: FitnessConfig):
     """
     Flexible fitness function that works with configurable metrics
@@ -184,20 +182,18 @@ def fitness(metrics_dict, config: FitnessConfig):
     
     pareto_mask = find_pareto_mask(*[metric_arrays[m] for m in config.selected_metrics])
     
-    # Combine validity and filtering
     final_mask = valid_mask & (~bottom_mask | pareto_mask)
     
-    # Create fitness values
     fitness_values = []
     for metric in config.selected_metrics:
         arr = metric_arrays[metric]
         is_minimize = config.is_minimize_metric(metric)
         
         if is_minimize:
-            # For minimize metrics, use large positive value for invalid
+            # for minimize metrics
             fitness_arr = np.where(final_mask, arr, 1000)
         else:
-            # For maximize metrics, use large negative value for invalid
+            # for maximize metrics
             fitness_arr = np.where(final_mask, arr, -1000)
             
         fitness_values.append(fitness_arr)

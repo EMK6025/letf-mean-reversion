@@ -1,4 +1,3 @@
-
 import pandas as pd
 import backtest
 from backtest import Params
@@ -34,9 +33,6 @@ end = "2020-12-31"
 
 engine = create_engine()
 df = connect(engine, "test_data")
-df['Date'] = pd.to_datetime(df['Date'])
-df.set_index("Date", inplace=True)
-df.sort_index(inplace=True)
 spxt = df["SPX Close"][start:end]
 UPRO = df["3x LETF"][start:end]
 

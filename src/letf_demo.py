@@ -8,9 +8,6 @@ START = "2000-01-01"
 def main():
     engine = create_engine()
     df = connect(engine, "test_data")
-    df['Date'] = pd.to_datetime(df['Date'])
-    df.set_index("Date", inplace=True)
-    df.sort_index(inplace=True)
     # df = df.loc[START:]
     spxt = df["SPX Close"]
     sso = df["2x LETF"]
