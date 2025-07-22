@@ -62,7 +62,11 @@ class FitnessConfig:
         return len(self.selected_metrics)
 
 def calc_metrics(pfs, benchmark, params):
-    """Calculate all available metrics"""
+    """
+    calculate all available metrics
+    input: backtested performances, benchmark performance, and the input params for the backtest
+    output: metrics dic 
+    """
     returns = pfs.returns()
     benchmark_returns = benchmark.returns()
     common_idx = returns.index.intersection(benchmark_returns.index)

@@ -3,7 +3,7 @@ from sql_functions import update_sql_table
 from engine import create_engine
 
 def main():
-    ## connect to SQL
+    # connect to SQL
     engine = create_engine()
 
     df = pd.read_csv('SPX-data.csv', usecols=['Date', 'Close'])
@@ -13,7 +13,7 @@ def main():
 
     df = df.sort_values("Date")
     
-    df = df.rename(columns={ # rename
+    df = df.rename(columns={
         "Close": "SPX Close"
     })
     

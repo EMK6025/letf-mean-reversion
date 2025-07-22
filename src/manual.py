@@ -12,6 +12,10 @@ from fitness import calc_metrics
 warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
 vbt.settings.array_wrapper['freq'] = '1D'
 
+def print_summary(strat_name, index, metrics_dict):
+    print(f"   {strat_name}: S={metrics_dict['sortino'].iloc[index]:.3f}, Sh={metrics_dict['sharpe'].iloc[index]:.3f}, "
+        f"RD={metrics_dict['rel_drawdown'].iloc[index]:.3f}, a={metrics_dict['alpha'].iloc[index]:.3f}")
+
 param0 = Params(
     window=5,
     entry=20,
@@ -52,13 +56,11 @@ pfs = backtest.run(params, start, end)
 
 benchmark_return = base.returns()
 
-sortino, sharpe, rel_drawdown, _, alpha, _ = calc_metrics(pfs, base)
+metrics = calc_metrics(pfs, base, params)
 
-print(f"   2422+: S={sortino.iloc[0]:.3f}, Sh={sharpe.iloc[0]:.3f}, "
-        f"RD={rel_drawdown.iloc[0]:.3f}, a={alpha.iloc[0]:.3f}")
+print_summary("2422+", 0, metrics)
 
-print(f"   backtested: S={sortino.iloc[1]:.3f}, Sh={sharpe.iloc[1]:.3f}, "
-        f"RD={rel_drawdown.iloc[1]:.3f}, a={alpha.iloc[1]:.3f}")
+print_summary("optimized results", 1, metrics)
 
 etf1_value = base.value()
 etf3_value = upro.value()

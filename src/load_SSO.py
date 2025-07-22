@@ -3,7 +3,7 @@ from sql_functions import update_sql_table
 from engine import create_engine
 
 def main():
-    ## connect to SQL
+    # connect to SQL
     engine = create_engine()
 
     df = pd.read_csv('SSO-historical_nav.csv', usecols=['Date', 'NAV Change (%)'])
