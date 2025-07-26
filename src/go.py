@@ -1,7 +1,7 @@
 import pandas as pd
 import backtest
 from backtest import Params
-from engine import create_engine, connect
+from engine import create_engine, connect_time_series
 from vectorbt import Portfolio
 import numpy as np
 import vectorbt as vbt
@@ -54,11 +54,11 @@ def evaluate(pop, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
     
     params = []
     for individual in pop:
-        window, entry, exit_, sell_threshold, *pos_sizing = individual
+        window, entry, exit, sell_threshold, *pos_sizing = individual
         params.append(Params(
             window=window,
             entry=entry,
-            exit=exit_,
+            exit=exit,
             sell_threshold=sell_threshold,
             position_sizing=np.array(pos_sizing)
         ))
@@ -148,7 +148,7 @@ def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date="19
     return next_gen
 
 engine = create_engine()
-df = connect(engine, "test_data")
+df = connect_time_series(engine, "test_data")
 spxt = df["SPX Close"]
 benchmark = Portfolio.from_holding(close=spxt, freq='1D')
 

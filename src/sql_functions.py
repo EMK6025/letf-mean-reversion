@@ -58,7 +58,7 @@ def clean(engine, table_name="test_data"):
 
 def reset(engine):
     '''
-    desc: resets both tables
+    desc: resets both data tables
     in: engine connection
     out: void, simply updates the table
     '''
@@ -72,30 +72,30 @@ def reset(engine):
 
     data = Table( 
         "data", metadata,
-        Column("Date", Date, primary_key=True),
-        Column("RF Rate", Float),
-        Column("SPXTR Change", Float),
-        Column("SPX Close", Float),
-        Column("2x LETF", Float),
-        Column("3x LETF", Float),
-        Column("4x LETF", Float),
-        Column("2x LETF Change", Float),
-        Column("3x LETF Change", Float),
-        Column("4x LETF Change", Float)
+        Column("Date",              Date, primary_key=True),
+        Column("RF Rate",           Float),
+        Column("SPXTR Change",      Float),
+        Column("SPX Close",         Float),
+        Column("2x LETF",           Float),
+        Column("3x LETF",           Float),
+        Column("4x LETF",           Float),
+        Column("2x LETF Change",    Float),
+        Column("3x LETF Change",    Float),
+        Column("4x LETF Change",    Float)
     ) 
 
     test_data = Table( 
         "test_data", metadata,
-        Column("Date", Date, primary_key=True),
-        Column("RF Rate", Float),
-        Column("SPXTR Change", Float),
-        Column("SPX Close", Float),
-        Column("2x LETF", Float),
-        Column("3x LETF", Float),
-        Column("4x LETF", Float),
-        Column("2x LETF Change", Float),
-        Column("3x LETF Change", Float),
-        Column("4x LETF Change", Float)
+        Column("Date",              Date, primary_key=True),
+        Column("RF Rate",           Float),
+        Column("SPXTR Change",      Float),
+        Column("SPX Close",         Float),
+        Column("2x LETF",           Float),
+        Column("3x LETF",           Float),
+        Column("4x LETF",           Float),
+        Column("2x LETF Change",    Float),
+        Column("3x LETF Change",    Float),
+        Column("4x LETF Change",    Float)
     ) 
 
     metadata.create_all(engine)

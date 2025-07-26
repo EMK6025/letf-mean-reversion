@@ -1,6 +1,6 @@
 import pandas as pd
 from pandas import Series
-from engine import create_engine, connect
+from engine import create_engine, connect_time_series
 from sql_functions import update_sql_table
 
 ERROR = [0, 0, -0.01029458456440809, -0.010536010464299613, -0.01077743636]
@@ -13,7 +13,7 @@ def theoretical_change(df, X):
 
 def main():
     engine = create_engine()
-    df = connect(engine, "test_data")
+    df = connect_time_series(engine, "test_data")
     
     df["2x LETF Change"] = theoretical_change(df, 2)
     df["3x LETF Change"] = theoretical_change(df, 3)

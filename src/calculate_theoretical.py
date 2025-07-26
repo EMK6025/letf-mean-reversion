@@ -1,12 +1,12 @@
 import pandas as pd
-from engine import create_engine, connect
+from engine import create_engine, connect_time_series
 
 def theoretical_change(df, X):
     return df["SPXTR Change"]*X - df["RF Rate"]*(X-1)
 
 def main():
     engine = create_engine()
-    df = connect(engine, "test_data")
+    df = connect_time_series(engine, "test_data")
 
     df["Theoretical 3x LETF"] = theoretical_change(df, 3)
     temp = df["3x LETF Change"].notna() & df["Theoretical 3x LETF"].notna()

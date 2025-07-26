@@ -1,6 +1,6 @@
 import pandas as pd
 from pandas import Series
-from engine import create_engine, connect
+from engine import create_engine, connect_time_series
 from sql_functions import update_sql_table
 
 def theoretical_return(p_series: Series, start_val): 
@@ -11,7 +11,7 @@ def theoretical_return(p_series: Series, start_val):
 
 def main():
     engine = create_engine()
-    df = connect(engine, "test_data")
+    df = connect_time_series(engine, "test_data")
     
     start_val = df["SPX Close"].iloc[0]
     df["2x LETF"] = theoretical_return(df["2x LETF Change"], start_val)

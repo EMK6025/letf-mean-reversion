@@ -1,6 +1,6 @@
 from sql_functions import reset, clean, show
 import pandas as pd
-from engine import create_engine, connect
+from engine import create_engine, connect_time_series
 
 def repopulate_test_data():
     import load_RF, load_SPXTR, load_SPX, load_SSO, load_UPRO, populate_change, populate_letf
@@ -25,7 +25,7 @@ def repopulate_test_data():
 if __name__ == "__main__":
     repopulate_test_data()
     engine = create_engine()
-    df = connect(engine, "test_data")
+    df = connect_time_series(engine, "test_data")
     with pd.option_context('display.max_columns', None):
         print("\n>>> Random 10-row sample:\n")
         print(df.sample(10))
