@@ -1,5 +1,5 @@
 import pandas as pd
-from engine import create_engine, connect
+from engine import create_engine, connect_time_series
 import numpy as np
 from vectorbt import Portfolio, RSI, IndicatorFactory
 from dataclasses import dataclass, field
@@ -95,7 +95,7 @@ def apply(price, prelim_entry, prelim_exit, size, sell_threshold):
 
 def run(params, start_date, end_date, initial_capital=10000, leverage=3):
     engine = create_engine()
-    df = connect(engine, "test_data")
+    df = connect_time_series(engine, "test_data")
     
     price = df["SPX Close"]
     if leverage < 2: 

@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import time
+from vectorbt import Portfolio
 import vectorbt as vbt
 import warnings
 import random
@@ -11,7 +12,7 @@ from sklearn.cluster import KMeans
 import backtest
 from backtest import Params
 import go
-from fitness import FitnessConfig
+from fitness import FitnessConfig, calc_metrics
 from backtest_analysis import analyze_wfo
 from wfo_sql import insert_new_run, insert_period_summary, insert_period_strategies
 from engine import create_engine, connect_time_series
@@ -207,6 +208,8 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
     cumulative_values = [] 
     
     df = connect_time_series(engine, "test_data")
+    spxt = df["SPX Close"]
+    benchmark = Portfolio.from_holding(close=spxt, freq='1D')
     
     print(f"\n{'='*80}")
     print(f"WALK-FORWARD OPTIMIZATION WITH ENSEMBLE")
@@ -292,31 +295,10 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         cumulative_values.append(combined_values)
         current_portfolio_value = combined_values.iloc[-1]
         
-        # calculate performance metrics for the ensemble
+        combined_metrics = calc_metrics(combined_values, benchmark, ensemble_strategies)
+        
         period_return = (combined_values.iloc[-1] / combined_values.iloc[0]) - 1
-        
-        # calculate other metrics using the combined series
-        combined_returns = combined_values.pct_change().dropna()
-        if len(combined_returns) > 0:
-            annualized_return = (1 + combined_returns.mean()) ** 252 - 1
-            volatility = combined_returns.std() * np.sqrt(252)
-            sharpe_ratio = annualized_return / volatility if volatility > 0 else 0
             
-            # calculate max drawdown for ensemble
-            rolling_max = combined_values.cummax()
-            drawdown = (combined_values - rolling_max) / rolling_max
-            max_drawdown = drawdown.min()
-            
-            # calculate Sortino ratio  for ensemble
-            negative_returns = combined_returns[combined_returns < 0]
-            downside_std = negative_returns.std() * np.sqrt(252) if len(negative_returns) > 0 else 0
-            sortino_ratio = annualized_return / downside_std if downside_std > 0 else 0
-        else:
-            annualized_return = 0
-            max_drawdown = 0
-            sharpe_ratio = 0
-            sortino_ratio = 0
-        
         performance = {
             'period': period + 1,
             'in_sample_start': in_sample_start_str,
@@ -326,10 +308,10 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
             'combined_values': combined_values,
             'final_value': current_portfolio_value,
             'period_return': period_return,
-            'annualized_return': annualized_return,
-            'max_drawdown': max_drawdown,
-            'sharpe_ratio': sharpe_ratio,
-            'sortino_ratio': sortino_ratio,
+            'rel_drawdown': combined_metrics['rel_drawdown'],
+            'max_drawdown': combined_metrics['drawdown'],
+            'sharpe_ratio': combined_metrics['sharpe'],
+            'sortino_ratio': combined_metrics['sortino'],
             'n_strategies': len(ensemble_strategies)
         }
         
@@ -342,6 +324,7 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         print(f"   Period Return: {performance['period_return']:.2%}")
         print(f"   Annualized Return: {performance['annualized_return']:.2%}")
         print(f"   Max Drawdown: {performance['max_drawdown']:.2%}")
+        print(f"   Rel Drawdown: {performance['rel_drawdown']:.2%}")
         print(f"   Sharpe Ratio: {performance['sharpe_ratio']:.3f}")
         print(f"   Sortino Ratio: {performance['sortino_ratio']:.3f}")
         print(f"   Number of strategies: {performance['n_strategies']}")
@@ -362,13 +345,12 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
     return wfo_results, all_ensemble_strategies, cumulative_values
 
 def main():
-    start_date = "1995-01-01"
-    end_date = "2009-12-31"
+    start_date = "1991-01-01"
+    end_date = "2024-12-31"
     
     # create custom fitness configuration
     custom_config = FitnessConfig(
-        selected_metrics=['sharpe', 'alpha'],  # remove position_stability
-        custom_weights={'sharpe': 1.0, 'alpha': 3.0},  # give more weight to alpha
+        selected_metrics=['sortino', 'sharpe', 'rel_drawdown', 'alpha', 'position_stability', 'var'],  # remove position_stability
         enable_bottom_percentile_filter=True,
         bottom_percentile=10.0
     )
@@ -382,10 +364,10 @@ def main():
         start_date=start_date,
         end_date=end_date,
         in_sample_months=120,
-        out_sample_months=24,
+        out_sample_months=12,
         max_time_minutes=20,
         stall_generations=10,
-        pop_size=2500,
+        pop_size=1000,
         n_ensemble=10,
         leverage=4,
         fitness_config=custom_config

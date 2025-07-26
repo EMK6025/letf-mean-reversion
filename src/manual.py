@@ -92,4 +92,7 @@ runs = connect(engine, "wfo_run")
 period_summaries = connect(engine, "wfo_period_summary")
 # strategies = connect(engine, "wfo_strategy")
 
-print(runs.head())
+with pd.option_context('display.max_columns', None, 
+                       'display.max_colwidth', None, 
+                       'display.width', None):
+    print(period_summaries.head())

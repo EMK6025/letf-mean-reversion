@@ -24,13 +24,16 @@ import pandas as pd
 username = "username"
 password = "password"
 
-def create_engine():
-    return _sa_create_engine(f"postgresql+psycopg://{username}:{password}@localhost:5432/letf_data")
-
-def connect(engine, table_name = "test_data"):
-    df = pd.read_sql(f"SELECT * FROM {table_name}", engine)
+def connect_time_series(engine, table_name = "test_data"):
+    df = connect(engine, table_name)
+    df['Date'] = pd.to_datetime(df['Date'])
     df.set_index("Date", inplace=True)
     df.sort_index(inplace=True)
+    return df
+
+# use with wfo_run, wfo_period_summary, or wfo_strategy
+def connect(engine, table_name = "wfo_run"):
+    df = pd.read_sql(f"SELECT * FROM {table_name}", engine)
     return df
 '''
 

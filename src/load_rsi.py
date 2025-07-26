@@ -1,13 +1,13 @@
 import pandas as pd
 import numpy as np
-from engine import create_engine, connect
+from engine import create_engine, connect_time_series
 import vectorbt as vbt
 from sql_functions import update_sql_table
 
 
 def main():
     engine = create_engine()
-    df = connect(engine, "test_data")
+    df = connect_time_series(engine, "test_data")
     series = pd.to_numeric(df["SPX Close"], errors="coerce").astype(float)
 
     windows = np.arange(3, 21)
