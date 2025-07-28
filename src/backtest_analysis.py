@@ -3,7 +3,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from vectorbt import Portfolio
 from datetime import date
-from dateutil.relativedelta import relativedelta
 from engine import create_engine, connect, connect_time_series
 
 def analyze_wfo(run_id):
@@ -79,7 +78,7 @@ def rebuild_performance(run_id):
     total_months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
     num_periods = (total_months - in_sample_months) // out_sample_months + 1
     
-    backtest_start_date = start_date + relativedelta(months=in_sample_months)
+    backtest_start_date = start_date + pd.DateOffset(months=in_sample_months)
     for col in ['pos_sizing', 'fitness_values']:
         strategies[col] = strategies[col].apply(lambda x: [round(v, 2) for v in x])
 
@@ -93,8 +92,8 @@ def rebuild_performance(run_id):
     
     for period in range(1, num_periods+1):
         period_strategies = strategies[strategies['period_id'] == period]
-        period_start_date = backtest_start_date + relativedelta(months=(period-1)*out_sample_months)
-        period_end_date = period_start_date + relativedelta(months=out_sample_months)
+        period_start_date = backtest_start_date + pd.DateOffset(months=(period-1)*out_sample_months)
+        period_end_date = period_start_date + pd.DateOffset(months=out_sample_months)
         
         capital_per_strategy = current_portfolio_value / len(period_strategies)
 

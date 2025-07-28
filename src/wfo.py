@@ -129,8 +129,14 @@ def select_diverse_strategies(pareto_front, n_strategies=10):
     
     # standardize the parameters
     scaler = StandardScaler()
-    strategy_params_scaled = scaler.fit_transform(strategy_params)
     
+    # when clustering through input space
+    # strategy_params_scaled = scaler.fit_transform(strategy_params)
+    
+    # when clustering through fitness space
+    fitness_matrix = np.vstack([ind.fitness.values for ind in pareto_front])
+    strategy_params_scaled = StandardScaler().fit_transform(fitness_matrix)
+
     # use K-means clustering to find diverse strategies
     kmeans = KMeans(n_clusters=n_strategies, random_state=seed, n_init=10)
     cluster_labels = kmeans.fit_predict(strategy_params_scaled)
@@ -200,10 +206,10 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
     if fitness_config:
         go.set_fitness_config(fitness_config)
 
-    start_date_dt = pd.to_datetime(start_date)
-    end_date_dt = pd.to_datetime(end_date)
+    start_date = pd.to_datetime(start_date).date()
+    end_date = pd.to_datetime(end_date).date()
     
-    total_months = (end_date_dt.year - start_date_dt.year) * 12 + (end_date_dt.month - start_date_dt.month)
+    total_months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
     num_periods = (total_months - in_sample_months) // out_sample_months + 1
     
     cumulative_values = [] 
@@ -219,19 +225,18 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
     print(f"Total periods: {num_periods}")
     print(f"{'='*80}\n")
     
-    current_start = start_date_dt
-    current_portfolio_value = None
-    in_sample_end_dt = pd.to_datetime(in_sample_end_str)
-    spx_after_date = df["SPX Close"][in_sample_end_dt:].iloc[0]
+    current_start = start_date
+    first_in_sample_end = current_start + pd.DateOffset(months=in_sample_months)
+    spx_after_date = df["SPX Close"][first_in_sample_end:].iloc[0]
     current_portfolio_value = spx_after_date
     
     for period in range(num_periods):
-        in_sample_end = current_start + pd.DateOffset(months=in_sample_months)
+        in_sample_end = start_date + pd.DateOffset(months=in_sample_months)
         out_sample_start = in_sample_end + pd.DateOffset(days=1)
         out_sample_end = in_sample_end + pd.DateOffset(months=out_sample_months)
         
-        if out_sample_end > end_date_dt:
-            out_sample_end = end_date_dt
+        if out_sample_end > end_date:
+            out_sample_end = end_date
         
         in_sample_start_str = current_start.strftime('%Y-%m-%d')
         in_sample_end_str = in_sample_end.strftime('%Y-%m-%d')
