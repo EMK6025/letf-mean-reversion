@@ -2,92 +2,55 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from vectorbt import Portfolio
+from datetime import date
+from dateutil.relativedelta import relativedelta
+from engine import create_engine, connect, connect_time_series
 
-from engine import create_engine, connect_time_series
-
-def analyze_wfo(wfo_results, all_ensemble_strategies, cumulative_values, start_date, end_date):
+def analyze_wfo(run_id):
     """
     Analyze walk-forward optimization results with ensemble strategies.
     """
-    print(f"\n{'='*80}")
-    print(f"WALK-FORWARD OPTIMIZATION ENSEMBLE ANALYSIS")
-    print(f"Period: {start_date} to {end_date}")
-    print(f"{'='*80}\n")
-    
-    returns = [result['annualized_return'] for result in wfo_results]
-    period_returns = [result['period_return'] for result in wfo_results]
-    drawdowns = [result['max_drawdown'] for result in wfo_results]
-    sharpes = [result['sharpe_ratio'] for result in wfo_results]
-    sortinos = [result['sortino_ratio'] for result in wfo_results]
-    n_strategies_per_period = [result['n_strategies'] for result in wfo_results]
-    
-    print(f"Number of periods: {len(wfo_results)}")
-    print(f"Average strategies per period: {np.mean(n_strategies_per_period):.1f}")
-    print(f"Average annualized return: {np.mean(returns):.2%}")
-    print(f"Average period return: {np.mean(period_returns):.2%}")
-    print(f"Average max drawdown: {np.mean(drawdowns):.2%}")
-    print(f"Average Sharpe ratio: {np.mean(sharpes):.3f}")
-    print(f"Average Sortino ratio: {np.mean(sortinos):.3f}")
-    print(f"Win rate (periods with positive returns): {sum(r > 0 for r in period_returns) / len(period_returns):.2%}")
-    
-    # analyze strategy diversity across periods
-    all_windows = []
-    all_entries = []
-    all_exits = []
-    all_sell_thresholds = []
-    
-    for ensemble in all_ensemble_strategies:
-        for strategy in ensemble:
-            window, entry, exit_, sell_threshold, *pos_sizing = strategy
-            all_windows.append(window)
-            all_entries.append(entry)
-            all_exits.append(exit_)
-            all_sell_thresholds.append(sell_threshold)
-    
-    print(f"\nStrategy Parameter Diversity (across all {len(all_windows)} strategy instances):")
-    print(f"RSI Window - Mean: {np.mean(all_windows):.1f}, Std: {np.std(all_windows):.1f}, Range: {min(all_windows)}-{max(all_windows)}")
-    print(f"Entry Threshold - Mean: {np.mean(all_entries):.1f}, Std: {np.std(all_entries):.1f}, Range: {min(all_entries):.1f}-{max(all_entries):.1f}")
-    print(f"Exit Threshold - Mean: {np.mean(all_exits):.1f}, Std: {np.std(all_exits):.1f}, Range: {min(all_exits):.1f}-{max(all_exits):.1f}")
-    print(f"Sell Threshold - Mean: {np.mean(all_sell_thresholds):.1f}, Std: {np.std(all_sell_thresholds):.1f}, Range: {min(all_sell_thresholds):.1f}-{max(all_sell_thresholds):.1f}")
-    
-    _, axes = plt.subplots(3, 1, figsize=(14, 18))
-    
-    ax = axes[0]
+    cumulative_values, backtest_start_date, leverage = rebuild_performance(run_id)
     engine = create_engine()
     df = connect_time_series(engine, "test_data")
+    spx = df["SPX Close"][backtest_start_date:]
     
-    first_out_sample_start = wfo_results[0]['in_sample_end']
+    pfs = Portfolio.from_holding(
+        close=cumulative_values,
+        size = 1,
+        freq='1D'
+    )
     
-    spxt = df["SPX Close"][first_out_sample_start:end_date]
-    UPRO = df["3x LETF"][first_out_sample_start:end_date]
+    benchmark = Portfolio.from_holding(
+        close=spx, 
+        size=1, 
+        freq=pfs.wrapper.freq
+    )
 
-    base = Portfolio.from_holding(
-        close = spxt,
-        freq = '1D'
-    )
+    returns = pfs.returns()
+    benchmark_returns = benchmark.annualized_return()
+    sortino = returns.vbt.returns.sortino_ratio().iloc[0]
+    sharpe = returns.vbt.returns.sharpe_ratio().iloc[0]
+    rel_drawdown = (pfs.max_drawdown() / benchmark.max_drawdown()).iloc[0]
+    drawdown = pfs.max_drawdown().iloc[0]
+    alpha = (pfs.annualized_return() - benchmark.annualized_return()).iloc[0]
+    annual_return = pfs.annualized_return().iloc[0]
     
-    upro = Portfolio.from_holding(
-        close = UPRO, 
-        freq = '1D'
-    )
+    print("=== Performance Metrics ===")
+    print(f"Annualized Return       : {annual_return:.2%}")
+    print(f"Alpha                   : {alpha:.2%}")
+    print(f"Sharpe Ratio            : {sharpe:.2f}")
+    print(f"Sortino Ratio           : {sortino:.2f}")
+    print(f"Max Drawdown            : {drawdown:.2%}")
+    print(f"Relative Drawdown (vs benchmark): {rel_drawdown:.2f}×")
+    print(f"Benchmark Annualized Return: {benchmark_returns:.2%}")
     
-    combined_performance = pd.concat(cumulative_values)
-    combined_performance = combined_performance[~combined_performance.index.duplicated(keep='first')]
-    combined_performance = combined_performance.sort_index()
-    
-    initial_wfo_value = combined_performance.iloc[0]
-    base_scaling = initial_wfo_value / base.value().iloc[0]
-    upro_scaling = initial_wfo_value / upro.value().iloc[0]
-    
-    ax.plot(base.value().index, base.value().values * base_scaling, 
-            label='1x SPX', color='blue', linewidth=2, alpha=0.7)
-    ax.plot(upro.value().index, upro.value().values * upro_scaling, 
-            label='3x LETF', color='green', linewidth=2, alpha=0.7)
-    ax.plot(combined_performance.index, combined_performance.values, 
-            label='WFO Ensemble Strategy', color='red', linewidth=2)
-    
-    for result in wfo_results:
-        ax.axvline(pd.to_datetime(result['in_sample_end']), color='gray', linestyle='--', alpha=0.5)
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    ax.plot(spx.index, spx.values, 
+            label='SPX', color='red', linewidth=2, alpha=0.7)
+    ax.plot(cumulative_values.index, cumulative_values.values, 
+            label='WFO Ensemble Strategy', color='green', linewidth=2)
     
     ax.set_title('Walk-Forward Optimization Ensemble Performance (Continuous Out-of-Sample)', fontsize=14)
     ax.set_ylabel('Portfolio Value')
@@ -96,85 +59,60 @@ def analyze_wfo(wfo_results, all_ensemble_strategies, cumulative_values, start_d
     ax.legend()
     ax.set_yscale('log')
     
-    # parameter diversity visualization
-    ax = axes[1]
-    periods = list(range(1, len(wfo_results) + 1))
-    
-    # calculate average parameters per period
-    avg_windows = [np.mean([s[0] for s in ensemble]) for ensemble in all_ensemble_strategies]
-    avg_entries = [np.mean([s[1] for s in ensemble]) for ensemble in all_ensemble_strategies]
-    avg_exits = [np.mean([s[2] for s in ensemble]) for ensemble in all_ensemble_strategies]
-    avg_sell_thresholds = [np.mean([s[3] for s in ensemble]) for ensemble in all_ensemble_strategies]
-    
-    ax.plot(periods, avg_windows, marker='o', label='Avg RSI Window', linewidth=2)
-    ax.plot(periods, avg_entries, marker='s', label='Avg Entry Threshold', linewidth=2)
-    ax.plot(periods, avg_exits, marker='^', label='Avg Exit Threshold', linewidth=2)
-    ax.plot(periods, avg_sell_thresholds, marker='*', label='Avg Sell Threshold', linewidth=2)
-    
-    ax.set_title('Average Ensemble Parameters Evolution Across Periods', fontsize=14)
-    ax.set_ylabel('Parameter Value')
-    ax.set_xlabel('Period')
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    
-    ax = axes[2]
-    
-    width = 0.15
-    x = np.arange(len(periods))
-    
-    returns_pct = [r * 100 for r in returns]
-    period_returns_pct = [r * 100 for r in period_returns]
-    drawdowns_pct = [d * 100 for d in drawdowns]
-    
-    ax.bar(x - 2*width, period_returns_pct, width, label='Period Return %', color='green', alpha=0.7)
-    ax.bar(x - width, [-d for d in drawdowns_pct], width, label='Max DD % (neg)', color='red', alpha=0.7)
-    ax.bar(x, sharpes, width, label='Sharpe', color='blue', alpha=0.7)
-    ax.bar(x + width, sortinos, width, label='Sortino', color='purple', alpha=0.7)
-    ax.bar(x + 2*width, n_strategies_per_period, width, label='# Strategies', color='orange', alpha=0.7)
-    
-    ax.set_title('Ensemble Performance Metrics by Period', fontsize=14)
-    ax.set_ylabel('Metric Value')
-    ax.set_xlabel('Period')
-    ax.set_xticks(x)
-    ax.set_xticklabels(periods)
-    ax.grid(True, alpha=0.3, axis='y')
-    ax.legend()
-    
     plt.tight_layout()
+    plt.savefig("wfo_analysis.png", dpi=300)  # Save the figure with high resolution
     plt.show()
     
-    print("\nPeriod-by-Period Ensemble Performance:")
-    print(f"{'Period':<7} {'In-Sample Start':<15} {'Out-Sample End':<15} {'#Strat':<7} {'Return':<12} {'Max DD':<12} {'Sharpe':<10} {'Sortino':<10}")
-    print(f"{'-'*100}")
+def rebuild_performance(run_id):
+    from wfo import run_ensemble_backtest
+
+    engine = create_engine()
+    run = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
+    strategies = connect(engine, "wfo_strategy")
+    strategies = strategies[strategies['run_id'] == run_id]
+    start_date = pd.to_datetime(run['start_date'].iloc[0]).date()
+    end_date = pd.to_datetime(run['end_date'].iloc[0]).date()
+    in_sample_months = run['in_sample_months'].iloc[0]
+    out_sample_months = run['out_sample_months'].iloc[0]
+    leverage = run['leverage'].iloc[0]
     
-    for i, result in enumerate(wfo_results):
-        return_str = f"{result['period_return']:.2%}"
-        dd_str = f"{result['max_drawdown']:.2%}"
-        sharpe_str = f"{result['sharpe_ratio']:.2f}"
-        sortino_str = f"{result['sortino_ratio']:.2f}"
-        n_strat_str = f"{result['n_strategies']}"
-        
-        print(f"{i+1:<7} {result['in_sample_start']:<15} {result['out_sample_end']:<15} "
-              f"{n_strat_str:<7} {return_str:<12} {dd_str:<12} {sharpe_str:<10} {sortino_str:<10}")
+    total_months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
+    num_periods = (total_months - in_sample_months) // out_sample_months + 1
     
-    if combined_performance.empty:
-        print("\nNo valid combined performance data")
-    else:
-        first_value = combined_performance.iloc[0]
-        last_value = combined_performance.iloc[-1]
-        total_return = (last_value / first_value) - 1
-        duration_years = (combined_performance.index[-1] - combined_performance.index[0]).days / 365.25
-        annualized_return = (1 + total_return) ** (1 / duration_years) - 1
+    backtest_start_date = start_date + relativedelta(months=in_sample_months)
+    for col in ['pos_sizing', 'fitness_values']:
+        strategies[col] = strategies[col].apply(lambda x: [round(v, 2) for v in x])
+
+    df = connect_time_series(engine, "test_data")
+    spx = df["SPX Close"][backtest_start_date:]
+    spx_after_date = df["SPX Close"][backtest_start_date:].iloc[0]
+    UPRO = df["3x LETF"][backtest_start_date:]
+
+    current_portfolio_value = spx_after_date
+    cumulative_values = pd.DataFrame()
+    
+    for period in range(1, num_periods+1):
+        period_strategies = strategies[strategies['period_id'] == period]
+        period_start_date = backtest_start_date + relativedelta(months=(period-1)*out_sample_months)
+        period_end_date = period_start_date + relativedelta(months=out_sample_months)
         
-        combined_performance_series = pd.Series(combined_performance.values, index=combined_performance.index)
-        rolling_max = combined_performance_series.cummax()
-        drawdown = (combined_performance_series - rolling_max) / rolling_max
-        max_drawdown = drawdown.min()
+        capital_per_strategy = current_portfolio_value / len(period_strategies)
+
+        period_ensemble = []
+        for i in range(0,len(period_strategies)):
+            period_ensemble.append([int(period_strategies["window"].iloc[i]), 
+                                    int(period_strategies["entry"].iloc[i]), 
+                                    int(period_strategies["exit"].iloc[i]), 
+                                    int(period_strategies["sell_threshold"].iloc[i])]
+                                   + [float(x) for x in period_strategies["pos_sizing"].iloc[i]])
         
-        print(f"\nAggregate Ensemble Out-of-Sample Performance:")
-        print(f"Starting Value: ${first_value:.2f}")
-        print(f"Final Value: ${last_value:.2f}")
-        print(f"Total Return: {total_return:.2%}")
-        print(f"Annualized Return: {annualized_return:.2%}")
-        print(f"Max Drawdown: {max_drawdown:.2%}")
-        print(f"Return/Drawdown Ratio: {-annualized_return/max_drawdown:.2f}")
+        combined_pf, combined_performance, params = run_ensemble_backtest(period_ensemble, period_start_date, period_end_date, capital_per_strategy, leverage)        
+        cumulative_values = pd.concat([cumulative_values, combined_performance], axis=0)
+        current_portfolio_value = combined_performance.iloc[-1]
+        print(f"Period {period}: Start Date {period_start_date}")
+        print(f"                 End Value {current_portfolio_value:.2f}")
+        
+    return cumulative_values, backtest_start_date, leverage
+
+if __name__ == "__main__":
+    analyze_wfo(1)

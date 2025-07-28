@@ -90,9 +90,13 @@ import numpy as np
 engine = create_engine()
 runs = connect(engine, "wfo_run")
 period_summaries = connect(engine, "wfo_period_summary")
-# strategies = connect(engine, "wfo_strategy")
+strategies = connect(engine, "wfo_strategy")
+
+strategies = strategies.round(2)
+for col in ['pos_sizing', 'fitness_values']:
+    strategies[col] = strategies[col].apply(lambda x: [round(v, 2) for v in x])
 
 with pd.option_context('display.max_columns', None, 
                        'display.max_colwidth', None, 
                        'display.width', None):
-    print(period_summaries.head())
+    print(strategies.head(11))

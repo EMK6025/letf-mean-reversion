@@ -48,7 +48,7 @@ wfo_strategy = Table(
     Column("window",            Integer,        nullable=False),
     Column("entry",             Integer,        nullable=False),
     Column("exit",              Integer,        nullable=False),
-    Column("sell_threshold",    Float,          nullable=False),
+    Column("sell_threshold",    Integer,          nullable=False),
     Column("pos_sizing",        ARRAY(Float),   nullable=False),
     Column("fitness_values",    JSON,           nullable=False),
     CheckConstraint(

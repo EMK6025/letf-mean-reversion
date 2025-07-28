@@ -77,12 +77,14 @@ def calc_metrics(pfs, benchmark, params):
     drawdown = pfs.max_drawdown()
     alpha = pfs.annualized_return() - benchmark.annualized_return()
     annual_return = pfs.annualized_return()
-    position_stability = [np.sum(p.position_sizing ** 2) for p in params]
-    position_stability = Series(position_stability, index=sortino.index)
+    ps_list = [np.sum(p.position_sizing ** 2) for p in params]
+    if hasattr(sortino, 'index') and len(ps_list) == len(sortino):
+        position_stability = Series(ps_list, index=sortino.index)
+    else:
+        position_stability = float(np.mean(ps_list))
     dd = pfs.value().vbt.drawdown().abs()
     ulcer = np.sqrt(dd.pow(2).mean(axis=0))
-    cagr = pfs.annualized_return()
-    pain_ratio = (cagr / ulcer).fillna(0)
+    pain_ratio = annual_return / ulcer
     var_95 = returns.vbt.returns.value_at_risk(cutoff=0.05)
     information_ratio = returns.vbt.returns.information_ratio(benchmark_rets=aligned_bench)
 
