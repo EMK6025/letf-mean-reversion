@@ -127,15 +127,13 @@ def select_diverse_strategies(pareto_front, n_strategies=10):
     
     strategy_params = np.array(strategy_params)
     
-    # standardize the parameters
-    scaler = StandardScaler()
-    
     # when clustering through input space
-    # strategy_params_scaled = scaler.fit_transform(strategy_params)
+    scaler = StandardScaler()
+    strategy_params_scaled = scaler.fit_transform(strategy_params)
     
     # when clustering through fitness space
-    fitness_matrix = np.vstack([ind.fitness.values for ind in pareto_front])
-    strategy_params_scaled = StandardScaler().fit_transform(fitness_matrix)
+    # fitness_matrix = np.vstack([ind.fitness.values for ind in pareto_front])
+    # strategy_params_scaled = StandardScaler().fit_transform(fitness_matrix)
 
     # use K-means clustering to find diverse strategies
     kmeans = KMeans(n_clusters=n_strategies, random_state=seed, n_init=10)
@@ -181,7 +179,7 @@ def run_ensemble_backtest(strategies, start_date, end_date, initial_capital_per_
             sell_threshold=sell_threshold,
             position_sizing=np.array(pos_sizing)
         ))
-    
+
     pfs = backtest.run(params, start_date, end_date, initial_capital_per_strategy, leverage=leverage)
     
     combined_performance = pfs.value().sum(axis=1)
@@ -198,16 +196,16 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
                              max_time_minutes=5, stall_generations=5, pop_size=500, n_ensemble=10, leverage=3, fitness_config=None):
     engine = create_engine()
     
-    run_id = insert_new_run(engine, start_date, end_date, in_sample_months, 
-                   out_sample_months, pop_size, n_ensemble, 
-                   leverage, fitness_config)
+    # run_id = insert_new_run(engine, start_date, end_date, in_sample_months, 
+    #                out_sample_months, pop_size, n_ensemble, 
+    #                leverage, fitness_config)
     
     # set fitness configuration if provided
     if fitness_config:
         go.set_fitness_config(fitness_config)
 
-    start_date = pd.to_datetime(start_date).date()
-    end_date = pd.to_datetime(end_date).date()
+    start_date = pd.Timestamp(start_date)
+    end_date = pd.Timestamp(end_date)
     
     total_months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
     num_periods = (total_months - in_sample_months) // out_sample_months + 1
@@ -216,7 +214,6 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
     
     df = connect_time_series(engine, "test_data")
     spxt = df["SPX Close"]
-    benchmark = vbt.Portfolio.from_holding(close=spxt, freq='1D')
     
     print(f"\n{'='*80}")
     print(f"WALK-FORWARD OPTIMIZATION WITH ENSEMBLE")
@@ -231,7 +228,7 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
     current_portfolio_value = spx_after_date
     
     for period in range(num_periods):
-        in_sample_end = start_date + pd.DateOffset(months=in_sample_months)
+        in_sample_end = current_start + pd.DateOffset(months=in_sample_months)
         out_sample_start = in_sample_end + pd.DateOffset(days=1)
         out_sample_end = in_sample_end + pd.DateOffset(months=out_sample_months)
         
@@ -240,12 +237,13 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         
         in_sample_start_str = current_start.strftime('%Y-%m-%d')
         in_sample_end_str = in_sample_end.strftime('%Y-%m-%d')
+        out_sample_start_str = out_sample_start.strftime('%Y-%m-%d')
         out_sample_end_str = out_sample_end.strftime('%Y-%m-%d')
         
         print(f"\n{'='*80}")
         print(f"PERIOD {period+1}/{num_periods}")
         print(f"In-sample: {in_sample_start_str} to {in_sample_end_str}")
-        print(f"Out-of-sample: {out_sample_start} to {out_sample_end_str}")
+        print(f"Out-of-sample: {out_sample_start_str} to {out_sample_end_str}")
         print(f"{'='*80}\n")
         
         pareto_front, generations, hypervolume_history = window_backtest(
@@ -291,7 +289,7 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         
         cumulative_values.append(combined_performance)
         current_portfolio_value = combined_performance.iloc[-1]
-        
+        benchmark = vbt.Portfolio.from_holding(close=spxt[out_sample_start:out_sample_end], freq='1D')
         combined_metrics = calc_metrics(combined_pf, benchmark, ensemble_params)
         
         period_return = (combined_performance.iloc[-1] / combined_performance.iloc[0]) - 1
@@ -309,12 +307,12 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         if period < num_periods - 1:
             current_start = current_start + pd.DateOffset(months=out_sample_months)
         
-        period_id = insert_period_summary(engine, run_id, period, current_start, 
-                          in_sample_end, out_sample_end, 
-                          pop_size, len(ensemble_strategies))
+        # period_id = insert_period_summary(engine, run_id, period, current_start, 
+        #                   in_sample_end, out_sample_end, 
+        #                   pop_size, len(ensemble_strategies))
         
-        # pareto_front is a List[Individual]
-        insert_period_strategies(engine, run_id, period_id, ensemble_strategies)
+        # # pareto_front is a List[Individual]
+        # insert_period_strategies(engine, run_id, period_id, ensemble_strategies)
 
 def main():
     from backtest_analysis import analyze_wfo
@@ -324,7 +322,7 @@ def main():
     
     # create custom fitness configuration
     custom_config = FitnessConfig(
-        selected_metrics=['sortino', 'sharpe', 'rel_drawdown', 'alpha', 'position_stability', 'var'],
+        selected_metrics=['sortino', 'sharpe', 'rel_drawdown', 'alpha', 'position_stability', 'pain_ratio', 'information_ratio', 'var'],
         enable_bottom_percentile_filter=True,
         bottom_percentile=10.0
     )
@@ -336,14 +334,14 @@ def main():
     
     walk_forward_optimization(
         start_date=start_date,
-        end_date=end_date,
+        end_date=end_date,  
         in_sample_months=120,
         out_sample_months=12,
         max_time_minutes=20,
         stall_generations=10,
         pop_size=1000,
         n_ensemble=10,
-        leverage=4,
+        leverage=3,
         fitness_config=custom_config
     )
     

@@ -30,7 +30,7 @@ wfo_run = Table(
 wfo_period_summary = Table( 
     "wfo_period_summary",       metadata,
     Column("period_id",        Integer,    primary_key=True,   autoincrement=True),
-    Column("run_id",            Integer,    ForeignKey("wfo_run.run_id"), nullable=False),
+    Column("run_id",            Integer,    ForeignKey("wfo_run.run_id", ondelete="CASCADE"), nullable=False),
     Column("period_index",      Integer,    nullable=False),
     Column("in_sample_start",   Date,       nullable=False),
     Column("in_sample_end",     Date,       nullable=False),
@@ -43,7 +43,7 @@ wfo_period_summary = Table(
 wfo_strategy = Table( 
     "wfo_strategy", metadata,
     Column("strategy_id",       Integer,        primary_key=True,   autoincrement=True),
-    Column("run_id",            Integer,        nullable=False),
+    Column("run_id",            Integer,        ForeignKey("wfo_run.run_id", ondelete="CASCADE"), nullable=False),
     Column("period_id",         Integer,        nullable=False),
     Column("window",            Integer,        nullable=False),
     Column("entry",             Integer,        nullable=False),
@@ -71,6 +71,13 @@ def reset(engine):
 
     metadata.create_all(engine)
     print(f"wfo_run, wfo_period_summary, and wfo_strategy have been reset to empty structures.\n")
+
+def clear(engine, to_remove):
+    with engine.begin() as conn:
+        conn.execute(
+            wfo_run.delete()
+                  .where(wfo_run.c.run_id.in_(to_remove))
+        )
 
 def insert_new_run(engine, start_date, end_date, in_sample_months, 
                    out_sample_months, pop_size, n_ensemble, 
@@ -173,4 +180,4 @@ CREATE TABLE wfo_strategy (
 
 if __name__ == "__main__":
     engine = create_engine()
-    reset(engine)
+    clear(engine, [1])

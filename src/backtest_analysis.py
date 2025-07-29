@@ -13,7 +13,8 @@ def analyze_wfo(run_id):
     engine = create_engine()
     df = connect_time_series(engine, "test_data")
     spx = df["SPX Close"][backtest_start_date:]
-    
+    run = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
+    print (run)
     pfs = Portfolio.from_holding(
         close=cumulative_values,
         size = 1,
@@ -67,8 +68,13 @@ def rebuild_performance(run_id):
 
     engine = create_engine()
     run = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
+    
+    # print(run)
+    
     strategies = connect(engine, "wfo_strategy")
     strategies = strategies[strategies['run_id'] == run_id]
+    
+    # print(f"length of strategies: {len(strategies)}")
     start_date = pd.to_datetime(run['start_date'].iloc[0]).date()
     end_date = pd.to_datetime(run['end_date'].iloc[0]).date()
     in_sample_months = run['in_sample_months'].iloc[0]
@@ -79,24 +85,25 @@ def rebuild_performance(run_id):
     num_periods = (total_months - in_sample_months) // out_sample_months + 1
     
     backtest_start_date = start_date + pd.DateOffset(months=in_sample_months)
+    
     for col in ['pos_sizing', 'fitness_values']:
         strategies[col] = strategies[col].apply(lambda x: [round(v, 2) for v in x])
 
     df = connect_time_series(engine, "test_data")
-    spx = df["SPX Close"][backtest_start_date:]
     spx_after_date = df["SPX Close"][backtest_start_date:].iloc[0]
-    UPRO = df["3x LETF"][backtest_start_date:]
 
     current_portfolio_value = spx_after_date
     cumulative_values = pd.DataFrame()
     
-    for period in range(1, num_periods+1):
+    first = strategies['period_id'].iloc[0]
+    
+    for period in range(first, first + num_periods):
         period_strategies = strategies[strategies['period_id'] == period]
-        period_start_date = backtest_start_date + pd.DateOffset(months=(period-1)*out_sample_months)
+        period_start_date = backtest_start_date + pd.DateOffset(months=(period-first)*out_sample_months)
         period_end_date = period_start_date + pd.DateOffset(months=out_sample_months)
         
         capital_per_strategy = current_portfolio_value / len(period_strategies)
-
+        
         period_ensemble = []
         for i in range(0,len(period_strategies)):
             period_ensemble.append([int(period_strategies["window"].iloc[i]), 
@@ -105,13 +112,78 @@ def rebuild_performance(run_id):
                                     int(period_strategies["sell_threshold"].iloc[i])]
                                    + [float(x) for x in period_strategies["pos_sizing"].iloc[i]])
         
+        print(f"Period {period + 1 - first}: Start Date {period_start_date}")
+        print(f"                 End Value {current_portfolio_value:.2f}")
+        
         combined_pf, combined_performance, params = run_ensemble_backtest(period_ensemble, period_start_date, period_end_date, capital_per_strategy, leverage)        
         cumulative_values = pd.concat([cumulative_values, combined_performance], axis=0)
         current_portfolio_value = combined_performance.iloc[-1]
-        print(f"Period {period}: Start Date {period_start_date}")
-        print(f"                 End Value {current_portfolio_value:.2f}")
         
     return cumulative_values, backtest_start_date, leverage
 
+def PCA_analysis(run_id):
+    from sklearn.decomposition import PCA
+
+    from sklearn import preprocessing
+    
+    engine = create_engine()
+    run = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
+    strategies = connect(engine, "wfo_strategy")
+    strategies = strategies[strategies['run_id'] == run_id]
+    # grab run.fitness config
+    fitness = strategies['fitness_values']
+    metrics = run['fitness_config'].iloc[0]['selected_metrics']
+    df = pd.DataFrame(fitness.tolist(), columns=metrics)
+    
+    print(df.head())
+    print(df.shape)
+    scaled_df = preprocessing.scale(df) #if column samples, pass in df.T
+
+    pca = PCA()
+    pca.fit(scaled_df)
+    pca_data = pca.transform(scaled_df)
+
+    # #matplotlib scree plot
+    per_var = np.round(pca.explained_variance_ratio_*100, decimals=1)
+    labels = ['PC' + str(x) for x in range(1, len(per_var)+1)]
+    plt.bar(x=range(1, len(per_var)+1), height=per_var)
+    plt.xticks(ticks=range(1, len(per_var)+1), labels=labels)
+
+    plt.ylabel('Percentage of Explained Variance')
+    plt.xlabel('Principal Component')
+    plt.title('Scree Plot')
+    plt.show()
+
+    pca_df = pd.DataFrame(pca_data, columns=labels)
+
+
+    plt.title('My PCA Graph')
+    plt.scatter(pca_df.PC1, pca_df.PC3)
+    
+    plt.xlabel('PC1 = {0}%'.format(per_var[0]))
+    plt.ylabel('PC3 = {0}%'.format(per_var[1]))
+    plt.show()
+
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+
+
+    # ax.scatter(pca_df.PC1, pca_df.PC2, pca_df.PC3)
+    # ax.set_xlabel('PC1 = {0}%'.format(per_var[0]))
+    # ax.set_ylabel('PC2 = {0}%'.format(per_var[1]))
+    # ax.set_zlabel('PC3 = {0}%'.format(per_var[2]))  # <-- this sets the z-axis label
+    # plt.show()
+    
+    # loading_scores = pd.Series(pca.components_[0], index=df.key)
+    # sorted_loading_scores = loading_scores.abs().sort_values(ascending=False)
+    # top_X_features = sorted_loading_scores[0:8].index.values
+    # print(loading_scores[top_X_features])
+
+    # # # 3) Inspect results
+    # # print(pca.explained_variance_)        # the eigenvalues (variances explained by each PC)
+    # # print(pca.explained_variance_ratio_)  # fraction of total variance per PC
+    # # print(pca.components_)
+    # # # with metrics as the column names, merge with fitness which has the corresponding row samples and column features
+
 if __name__ == "__main__":
-    analyze_wfo(1)
+    PCA_analysis(9)
