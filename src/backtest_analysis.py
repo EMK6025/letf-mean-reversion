@@ -186,4 +186,4 @@ def PCA_analysis(run_id):
     # # # with metrics as the column names, merge with fitness which has the corresponding row samples and column features
 
 if __name__ == "__main__":
-    PCA_analysis(9)
+    analyze_wfo(1)

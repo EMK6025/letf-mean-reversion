@@ -3,7 +3,7 @@ import pandas as pd
 from engine import create_engine, connect_time_series
 
 def repopulate_test_data():
-    import load_RF, load_SPXTR, load_SPX, load_SSO, load_UPRO, populate_change, populate_letf
+    import load_RF, load_SPXTR, load_SPX, populate_letf, calculate_theoretical
     engine = create_engine()
     reset(engine)
     # load borrowing costs
@@ -12,11 +12,11 @@ def repopulate_test_data():
     load_SPXTR.main()
     # load SPX
     load_SPX.main()
-    # load estimated daily change for LETFs
-    populate_change.main()
-    # replace estimates with actual for available dates
-    load_SSO.main()
-    load_UPRO.main()
+
+    # load estimated daily change for LETFs 
+    # (also replaces estimates with actual SSO and UPRO values where available)
+    calculate_theoretical.main()
+    
     # cut off anything that won't be used
     clean(engine)
     # find actual stock values from daily % changes

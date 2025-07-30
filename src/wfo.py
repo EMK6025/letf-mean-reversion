@@ -196,9 +196,9 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
                              max_time_minutes=5, stall_generations=5, pop_size=500, n_ensemble=10, leverage=3, fitness_config=None):
     engine = create_engine()
     
-    # run_id = insert_new_run(engine, start_date, end_date, in_sample_months, 
-    #                out_sample_months, pop_size, n_ensemble, 
-    #                leverage, fitness_config)
+    run_id = insert_new_run(engine, start_date, end_date, in_sample_months, 
+                   out_sample_months, pop_size, n_ensemble, 
+                   leverage, fitness_config)
     
     # set fitness configuration if provided
     if fitness_config:
@@ -307,12 +307,12 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         if period < num_periods - 1:
             current_start = current_start + pd.DateOffset(months=out_sample_months)
         
-        # period_id = insert_period_summary(engine, run_id, period, current_start, 
-        #                   in_sample_end, out_sample_end, 
-        #                   pop_size, len(ensemble_strategies))
+        period_id = insert_period_summary(engine, run_id, period, current_start, 
+                          in_sample_end, out_sample_end, 
+                          pop_size, len(ensemble_strategies))
         
-        # # pareto_front is a List[Individual]
-        # insert_period_strategies(engine, run_id, period_id, ensemble_strategies)
+        # pareto_front is a List[Individual]
+        insert_period_strategies(engine, run_id, period_id, ensemble_strategies)
 
 def main():
     from backtest_analysis import analyze_wfo
@@ -322,7 +322,7 @@ def main():
     
     # create custom fitness configuration
     custom_config = FitnessConfig(
-        selected_metrics=['sortino', 'sharpe', 'rel_drawdown', 'alpha', 'position_stability', 'pain_ratio', 'information_ratio', 'var'],
+        selected_metrics=['sortino', 'sharpe', 'rel_drawdown', 'alpha', 'position_stability', 'var'],
         enable_bottom_percentile_filter=True,
         bottom_percentile=10.0
     )

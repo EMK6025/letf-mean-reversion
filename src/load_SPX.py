@@ -12,7 +12,6 @@ def main():
     df['Close'] = df['Close'].astype(float)
 
     df = df.sort_values("Date")
-    
     df = df.rename(columns={
         "Close": "SPX Close"
     })
