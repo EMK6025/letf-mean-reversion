@@ -17,5 +17,3 @@ def main():
 
     update_sql_table(df, engine, "RF")
 
-if __name__ == "__main__":
-    main()
