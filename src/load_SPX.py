@@ -17,6 +17,3 @@ def main():
     })
     
     update_sql_table(df, engine, "SPX")
-
-if __name__ == "__main__":
-    main()

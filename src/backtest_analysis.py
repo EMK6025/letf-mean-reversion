@@ -184,6 +184,3 @@ def PCA_analysis(run_id):
     # # print(pca.explained_variance_ratio_)  # fraction of total variance per PC
     # # print(pca.components_)
     # # # with metrics as the column names, merge with fitness which has the corresponding row samples and column features
-
-if __name__ == "__main__":
-    analyze_wfo(1)

@@ -14,17 +14,18 @@ class FitnessConfig:
     
     # metric_name: (weight, minimize boolean, reference point)
     available_metrics = {
-        'sortino': (1.0, False, -1.0),           # Higher is better
-        'sharpe': (1.0, False, -1.0),            # Higher is better  
-        'rel_drawdown': (-1.0, True, 2.0),      # Lower is better
-        'alpha': (1.0, False, -.5),             # Higher is better
-        'position_stability': (-1.0, True, 1.0), # Lower is better
-        'drawdown': (-1.0, True, -1.0),          # Lower is better
-        'annual_return': (1.0, False, -1.0),     # Higher is better
-        'pain_ratio': (1.0, False, -1.0),       # Higher is better
-        'var': (-1.0, True, 1.0),               # Lower is better
-        'information_ratio': (1.0, False, -1.0)  # Higher is better
+        'sortino': (1.0, False, 0.0),          # Higher is better
+        'sharpe': (1.0, False, 0.0),           # Higher is better  
+        'rel_drawdown': (-1.0, True, 1.0),      # Lower is better
+        'alpha': (1.0, False, 0.0),             # Higher is better
+        'activeness': (1.0, False, 3.0),         # Higher is better
+        'drawdown': (1.0, False, -1.0),          # Higher is better
+        'annual_return': (1.0, False, 0.0),     # Higher is better
+        'pain_ratio': (1.0, False, 0.0),       # Higher is better
+        'var': (-1.0, True, .5),               # Lower is better
+        'information_ratio': (1.0, False, 0.0) # Higher is better
     }    
+    
     selected_metrics: List[str] = None
     
     custom_weights: Dict[str, float] = None
@@ -36,7 +37,7 @@ class FitnessConfig:
     def __post_init__(self):
         if self.selected_metrics is None:
             # default
-            self.selected_metrics = ['sortino', 'sharpe', 'rel_drawdown', 'alpha', 'position_stability']
+            self.selected_metrics = ['sortino', 'sharpe', 'rel_drawdown', 'alpha', 'activeness']
         
         if self.custom_weights is None:
             self.custom_weights = {}
@@ -77,11 +78,11 @@ def calc_metrics(pfs, benchmark, params):
     drawdown = pfs.max_drawdown()
     alpha = pfs.annualized_return() - benchmark.annualized_return()
     annual_return = pfs.annualized_return()
-    ps_list = [np.sum(p.position_sizing ** 2) for p in params]
-    if hasattr(sortino, 'index') and len(ps_list) == len(sortino):
-        position_stability = Series(ps_list, index=sortino.index)
+    activeness = [np.sum(p.position_sizing) for p in params]
+    if hasattr(sortino, 'index') and len(activeness) == len(sortino):
+        activeness = Series(activeness, index=sortino.index)
     else:
-        position_stability = float(np.mean(ps_list))
+        activeness = float(np.mean(activeness))
     dd = pfs.value().vbt.drawdown().abs()
     ulcer = np.sqrt(dd.pow(2).mean(axis=0))
     pain_ratio = annual_return / ulcer
@@ -90,18 +91,17 @@ def calc_metrics(pfs, benchmark, params):
 
     # Return dictionary of all metrics
     metrics = {
-        'sortino': sortino,
-        'sharpe': sharpe,
-        'rel_drawdown': rel_drawdown,
-        'drawdown': drawdown,
-        'alpha': alpha,
-        'annual_return': annual_return,
-        'position_stability': position_stability,
-        'pain_ratio': pain_ratio,
-        'var': var_95,
-        'information_ratio': information_ratio
+        'sortino': np.round(sortino, 4),
+        'sharpe': np.round(sharpe, 4),
+        'rel_drawdown': np.round(rel_drawdown, 4),
+        'drawdown': np.round(drawdown, 4),
+        'alpha': np.round(alpha, 4),
+        'annual_return': np.round(annual_return, 4),
+        'activeness': np.round(activeness, 4),
+        'pain_ratio': np.round(pain_ratio, 4),
+        'var': np.round(var_95, 4),
+        'information_ratio': np.round(information_ratio, 4)
     }
-    
     return metrics
 
 def fitness(metrics_dict, config: FitnessConfig):
@@ -111,7 +111,7 @@ def fitness(metrics_dict, config: FitnessConfig):
     # Apply rel_drawdown clipping if it's selected
     if 'rel_drawdown' in metrics_dict:
         metrics_dict['rel_drawdown'] = metrics_dict['rel_drawdown'].clip(lower=0.4)
-    
+        
     # Extract selected metrics
     selected_data = {}
     for metric in config.selected_metrics:

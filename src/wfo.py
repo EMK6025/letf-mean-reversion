@@ -20,11 +20,11 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 vbt.settings.array_wrapper['freq'] = '1D'
 
-seed = 24
+seed = 69
 random.seed(seed)
 np.random.seed(seed)
 
-def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations=10, pop_size=500, leverage=3, fitness_config=None):
+def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations=10, max_generations=100, pop_size=500, leverage=3, fitness_config=None):
     
     start_time = time.time()
     max_time_seconds = max_time_minutes * 60
@@ -39,7 +39,7 @@ def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations
     
     print("Calculating initial Pareto front...")
     pareto_front = tools.sortNondominated(population, len(population), first_front_only=True)[0]
-    
+        
     # dynamic reference point based on selected metrics
     ref_point = []
     for metric in fitness_config.selected_metrics:
@@ -47,9 +47,9 @@ def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations
         ref_point.append(params[2])
                 
     def calculate_hypervolume(front):
+        # front is a List[Individual]
         if not front:
             return 0
-
         fitness_matrix = np.vstack([ind.fitness.values for ind in front])
         ref = np.array(ref_point)            # shape (n_metrics,)
         
@@ -61,12 +61,13 @@ def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations
         diffs = np.where(minimize_mask,
                         ref - fitness_matrix,    # for minimize
                         fitness_matrix - ref)    # for maximize
-        diffs_clipped = np.clip(diffs, a_min=0, a_max=None)
         
+        diffs_clipped = np.clip(diffs, a_min=0, a_max=None)
+                
         volumes = np.prod(diffs_clipped, axis=1)  # shape (n_inds,)
+ 
         valid_mask = fitness_matrix[:, 0] > -1000
         total_volume = volumes[valid_mask].sum()
-
         return total_volume
     
     print("Calculating initial hypervolume...")
@@ -76,7 +77,7 @@ def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations
     
     print(f"\nGeneration {generation}: Pareto front size = {len(pareto_front)}, Hypervolume = {current_hypervolume:.4f}")
     
-    while generation < 101:
+    while generation < max_generations:
         generation += 1
         elapsed_time = time.time() - start_time
         
@@ -193,7 +194,7 @@ def run_ensemble_backtest(strategies, start_date, end_date, initial_capital_per_
     return combined_pf, combined_performance, params
 
 def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sample_months=12, 
-                             max_time_minutes=5, stall_generations=5, pop_size=500, n_ensemble=10, leverage=3, fitness_config=None):
+                             max_time_minutes=5, stall_generations=5, max_generations = 100, pop_size=500, n_ensemble=10, leverage=3, fitness_config=None):
     engine = create_engine()
     
     run_id = insert_new_run(engine, start_date, end_date, in_sample_months, 
@@ -251,13 +252,22 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
             end_date=in_sample_end_str,
             max_time_minutes=max_time_minutes,
             stall_generations=stall_generations,
+            max_generations=max_generations,
             pop_size=pop_size, 
             leverage=leverage,
             fitness_config=fitness_config
         )
         
         # select diverse strategies for ensemble
-        ensemble_strategies = select_diverse_strategies(pareto_front, n_strategies=n_ensemble)
+        if 'alpha' in fitness_config.selected_metrics:
+            alpha_index = fitness_config.selected_metrics.index('alpha')
+            cleaned_pareto_front = [ind for ind in pareto_front if ind.fitness.values[alpha_index] > 0]
+        else:
+            cleaned_pareto_front = pareto_front 
+            
+        if not cleaned_pareto_front:
+            cleaned_pareto_front = pareto_front
+        ensemble_strategies = select_diverse_strategies(cleaned_pareto_front, n_strategies=n_ensemble)
         ensemble_count = len(ensemble_strategies)
         print(f"\nEnsemble strategies for period {period+1}:")
         for i, strategy in enumerate(ensemble_strategies):
@@ -291,7 +301,6 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         current_portfolio_value = combined_performance.iloc[-1]
         benchmark = vbt.Portfolio.from_holding(close=spxt[out_sample_start:out_sample_end], freq='1D')
         combined_metrics = calc_metrics(combined_pf, benchmark, ensemble_params)
-        
         period_return = (combined_performance.iloc[-1] / combined_performance.iloc[0]) - 1
                 
         print(f"\nEnsemble out-of-sample performance:")
@@ -313,37 +322,3 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         
         # pareto_front is a List[Individual]
         insert_period_strategies(engine, run_id, period_id, ensemble_strategies)
-
-def main():
-    from backtest_analysis import analyze_wfo
-
-    start_date = "1991-01-01"
-    end_date = "2024-12-31"
-    
-    # create custom fitness configuration
-    custom_config = FitnessConfig(
-        selected_metrics=['sortino', 'sharpe', 'rel_drawdown', 'alpha', 'position_stability', 'var'],
-        enable_bottom_percentile_filter=True,
-        bottom_percentile=10.0
-    )
-    
-    print("Starting Walk-Forward Optimization with Ensemble...")
-    print(f"Full period: {start_date} to {end_date}")
-    print(f"Selected metrics: {custom_config.selected_metrics}")
-    print(f"Weights: {custom_config.get_weights()}")
-    
-    walk_forward_optimization(
-        start_date=start_date,
-        end_date=end_date,  
-        in_sample_months=120,
-        out_sample_months=12,
-        max_time_minutes=20,
-        stall_generations=10,
-        pop_size=1000,
-        n_ensemble=10,
-        leverage=3,
-        fitness_config=custom_config
-    )
-    
-if __name__ == "__main__":
-    main()

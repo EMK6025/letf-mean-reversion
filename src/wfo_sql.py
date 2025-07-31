@@ -180,4 +180,4 @@ CREATE TABLE wfo_strategy (
 
 if __name__ == "__main__":
     engine = create_engine()
-    
+    reset(engine)

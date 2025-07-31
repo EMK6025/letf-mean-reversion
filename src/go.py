@@ -70,7 +70,6 @@ def evaluate(pop, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
     
     # calculate fitness using selected metrics
     fitness_vals = fitness(metrics_dict, config)
-    
     return list(zip(*fitness_vals))
 
 def run_population(pop, start_date="1989-12-31", end_date="2020-12-31", leverage=3):

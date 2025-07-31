@@ -17,6 +17,3 @@ def main():
     df = df.drop(columns="Price")
     
     update_sql_table(df, engine, "SPXTR")
-
-if __name__ == "__main__":
-    main()
