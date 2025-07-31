@@ -5,64 +5,6 @@ from vectorbt import Portfolio
 from datetime import date
 from engine import create_engine, connect, connect_time_series
 
-def analyze_wfo(run_id):
-    """
-    Analyze walk-forward optimization results with ensemble strategies.
-    """
-    cumulative_values, backtest_start_date, leverage = rebuild_performance(run_id)
-    engine = create_engine()
-    df = connect_time_series(engine, "test_data")
-    spx = df["SPX Close"][backtest_start_date:]
-    run = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
-    print (run)
-    pfs = Portfolio.from_holding(
-        close=cumulative_values,
-        size = 1,
-        freq='1D'
-    )
-    
-    benchmark = Portfolio.from_holding(
-        close=spx, 
-        size=1, 
-        freq=pfs.wrapper.freq
-    )
-
-    returns = pfs.returns()
-    benchmark_returns = benchmark.annualized_return()
-    sortino = returns.vbt.returns.sortino_ratio().iloc[0]
-    sharpe = returns.vbt.returns.sharpe_ratio().iloc[0]
-    rel_drawdown = (pfs.max_drawdown() / benchmark.max_drawdown()).iloc[0]
-    drawdown = pfs.max_drawdown().iloc[0]
-    alpha = (pfs.annualized_return() - benchmark.annualized_return()).iloc[0]
-    annual_return = pfs.annualized_return().iloc[0]
-    
-    print("=== Performance Metrics ===")
-    print(f"Annualized Return       : {annual_return:.2%}")
-    print(f"Alpha                   : {alpha:.2%}")
-    print(f"Sharpe Ratio            : {sharpe:.2f}")
-    print(f"Sortino Ratio           : {sortino:.2f}")
-    print(f"Max Drawdown            : {drawdown:.2%}")
-    print(f"Relative Drawdown (vs benchmark): {rel_drawdown:.2f}×")
-    print(f"Benchmark Annualized Return: {benchmark_returns:.2%}")
-    
-    fig, ax = plt.subplots(figsize=(12, 6))
-
-    ax.plot(spx.index, spx.values, 
-            label='SPX', color='red', linewidth=2, alpha=0.7)
-    ax.plot(cumulative_values.index, cumulative_values.values, 
-            label='WFO Ensemble Strategy', color='green', linewidth=2)
-    
-    ax.set_title('Walk-Forward Optimization Ensemble Performance (Continuous Out-of-Sample)', fontsize=14)
-    ax.set_ylabel('Portfolio Value')
-    ax.set_xlabel('Date')
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    ax.set_yscale('log')
-    
-    plt.tight_layout()
-    plt.savefig("wfo_analysis.png", dpi=300)  # Save the figure with high resolution
-    plt.show()
-    
 def rebuild_performance(run_id):
     from wfo import run_ensemble_backtest
 
@@ -121,6 +63,63 @@ def rebuild_performance(run_id):
         
     return cumulative_values, backtest_start_date, leverage
 
+def analyze_wfo(run_id):
+    """
+    Analyze walk-forward optimization results with ensemble strategies.
+    """
+    cumulative_values, backtest_start_date, leverage = rebuild_performance(run_id)
+    engine = create_engine()
+    df = connect_time_series(engine, "test_data")
+    spx = df["SPX Close"][backtest_start_date:]
+    run = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
+    pfs = Portfolio.from_holding(
+        close=cumulative_values,
+        size = 1,
+        freq='1D'
+    )
+    
+    benchmark = Portfolio.from_holding(
+        close=spx, 
+        size=1, 
+        freq=pfs.wrapper.freq
+    )
+
+    returns = pfs.returns()
+    benchmark_returns = benchmark.annualized_return()
+    sortino = returns.vbt.returns.sortino_ratio().iloc[0]
+    sharpe = returns.vbt.returns.sharpe_ratio().iloc[0]
+    rel_drawdown = (pfs.max_drawdown() / benchmark.max_drawdown()).iloc[0]
+    drawdown = pfs.max_drawdown().iloc[0]
+    alpha = (pfs.annualized_return() - benchmark.annualized_return()).iloc[0]
+    annual_return = pfs.annualized_return().iloc[0]
+    
+    print("=== Performance Metrics ===")
+    print(f"Annualized Return       : {annual_return:.2%}")
+    print(f"Alpha                   : {alpha:.2%}")
+    print(f"Sharpe Ratio            : {sharpe:.2f}")
+    print(f"Sortino Ratio           : {sortino:.2f}")
+    print(f"Max Drawdown            : {drawdown:.2%}")
+    print(f"Relative Drawdown (vs benchmark): {rel_drawdown:.2f}×")
+    print(f"Benchmark Annualized Return: {benchmark_returns:.2%}")
+    
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    ax.plot(spx.index, spx.values, 
+            label='SPX', color='red', linewidth=2, alpha=0.7)
+    ax.plot(cumulative_values.index, cumulative_values.values, 
+            label='WFO Ensemble Strategy', color='green', linewidth=2)
+    
+    ax.set_title('Walk-Forward Optimization Ensemble Performance (Continuous Out-of-Sample)', fontsize=14)
+    ax.set_ylabel('Portfolio Value')
+    ax.set_xlabel('Date')
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    ax.set_yscale('log')
+    
+    plt.tight_layout()
+    plt.savefig("wfo_analysis.png", dpi=300)  # Save the figure with high resolution
+    plt.show()
+
 def PCA_analysis(run_id):
     from sklearn.decomposition import PCA
 
@@ -156,12 +155,11 @@ def PCA_analysis(run_id):
 
     pca_df = pd.DataFrame(pca_data, columns=labels)
 
-
     plt.title('My PCA Graph')
-    plt.scatter(pca_df.PC1, pca_df.PC3)
+    plt.scatter(pca_df.PC1, pca_df.PC2)
     
     plt.xlabel('PC1 = {0}%'.format(per_var[0]))
-    plt.ylabel('PC3 = {0}%'.format(per_var[1]))
+    plt.ylabel('PC2 = {0}%'.format(per_var[1]))
     plt.show()
 
     # fig = plt.figure()

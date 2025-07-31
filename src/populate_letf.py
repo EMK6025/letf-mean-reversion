@@ -20,6 +20,3 @@ def main():
     
     df.reset_index(inplace=True)
     update_sql_table(df, engine, "LETF")
-
-if __name__ == "__main__":
-    main()  

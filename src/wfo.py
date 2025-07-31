@@ -287,7 +287,7 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         print(f"Capital per strategy: ${capital_per_strategy:,}")
         combined_pf, combined_performance, ensemble_params = run_ensemble_backtest(
             ensemble_strategies, 
-            in_sample_end_str, 
+            out_sample_start_str, 
             out_sample_end_str, 
             capital_per_strategy,
             leverage=leverage
@@ -307,6 +307,7 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         print(f"   Starting Value: ${combined_performance.iloc[0]:.2f}")
         print(f"   Final Value: ${current_portfolio_value:.2f}")
         print(f"   Period Return: {period_return:.2%}")
+        print(f"   Benchmark Return: {benchmark.total_return():.2%}")
         print(f"   Max Drawdown: {combined_metrics['drawdown']:.2%}")
         print(f"   Rel Drawdown: {combined_metrics['rel_drawdown']:.2%}")
         print(f"   Sharpe Ratio: {combined_metrics['sharpe']:.3f}")

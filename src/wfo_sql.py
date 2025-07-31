@@ -4,9 +4,7 @@ from sqlalchemy import (
     UniqueConstraint, MetaData, text, insert
 )
 import dataclasses
-import pandas as pd
-import numpy as np
-from engine import create_engine
+from typing import List
 
 # wfo_run stores metadata about each run
 # wfo_period_summary stores metadat about each period of a given run
@@ -72,7 +70,7 @@ def reset(engine):
     metadata.create_all(engine)
     print(f"wfo_run, wfo_period_summary, and wfo_strategy have been reset to empty structures.\n")
 
-def clear(engine, to_remove):
+def clear(engine, to_remove: List):
     with engine.begin() as conn:
         conn.execute(
             wfo_run.delete()
@@ -177,7 +175,3 @@ CREATE TABLE wfo_strategy (
     fitness_values    JSONB     NOT NULL
 );
 '''
-
-if __name__ == "__main__":
-    engine = create_engine()
-    reset(engine)
