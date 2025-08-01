@@ -11,7 +11,7 @@ from sklearn.cluster import KMeans
 import backtest
 from backtest import Params
 import go
-from fitness import FitnessConfig, calc_metrics
+from fitness import calc_metrics
 from wfo_sql import insert_new_run, insert_period_summary, insert_period_strategies
 from engine import create_engine, connect_time_series
 
@@ -24,14 +24,18 @@ seed = 69
 random.seed(seed)
 np.random.seed(seed)
 
-def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations=10, max_generations=100, pop_size=500, leverage=3, fitness_config=None):
+engine = create_engine()
+df = connect_time_series(engine, "test_data")
+spxt = df["SPX Close"]
+
+def window_backtest(ref_points, start_date, end_date, max_time_minutes=10, stall_generations=10, max_generations=100, pop_size=500, leverage=3, fitness_config=None):
     
     start_time = time.time()
     max_time_seconds = max_time_minutes * 60
     
     hypervolume_history = []
     stall_counter = 0
-    generation = 0
+    generation = 1
     best_hypervolume = 0
     
     print("Generating initial population...")
@@ -39,19 +43,13 @@ def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations
     
     print("Calculating initial Pareto front...")
     pareto_front = tools.sortNondominated(population, len(population), first_front_only=True)[0]
-        
-    # dynamic reference point based on selected metrics
-    ref_point = []
-    for metric in fitness_config.selected_metrics:
-        params = fitness_config.available_metrics[metric]
-        ref_point.append(params[2])
                 
-    def calculate_hypervolume(front):
+    def calculate_hypervolume(front, ref_points):
         # front is a List[Individual]
         if not front:
             return 0
         fitness_matrix = np.vstack([ind.fitness.values for ind in front])
-        ref = np.array(ref_point)            # shape (n_metrics,)
+        ref = np.array(ref_points)            # shape (n_metrics,)
         
         minimize_mask = np.array([
             fitness_config.is_minimize_metric(m)
@@ -71,14 +69,15 @@ def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations
         return total_volume
     
     print("Calculating initial hypervolume...")
-    current_hypervolume = calculate_hypervolume(pareto_front)
+    current_hypervolume = calculate_hypervolume(pareto_front, ref_points)
     best_hypervolume = current_hypervolume
     hypervolume_history.append(current_hypervolume)
     
     print(f"\nGeneration {generation}: Pareto front size = {len(pareto_front)}, Hypervolume = {current_hypervolume:.4f}")
     
     while generation < max_generations:
-        generation += 1
+        if best_hypervolume != 0:
+            generation += 1
         elapsed_time = time.time() - start_time
         
         if elapsed_time > max_time_seconds:
@@ -99,7 +98,7 @@ def window_backtest(start_date, end_date, max_time_minutes=10, stall_generations
             print(f"NEW BEST! Hypervolume = {current_hypervolume:.4f} (+{improvement:.4f}), Pareto size = {len(pareto_front)}")
         else:
             stall_counter += 1
-            print(f"Hypervolume = {current_hypervolume:.4f} (Stall: {stall_counter}/{stall_generations}), Pareto size = {len(pareto_front)}")
+            print(f"Hypervolume = {current_hypervolume:.4f} (Stall: {stall_counter}/{stall_generations}), Pareto size = {len(   )}")
         
         hypervolume_history.append(current_hypervolume)
         
@@ -164,16 +163,33 @@ def select_diverse_strategies(pareto_front, n_strategies=10):
     
     return diverse_strategies
 
-def run_ensemble_backtest(strategies, start_date, end_date, initial_capital_per_strategy=10000, leverage=3):
+def run_ensemble_backtest(cleaned_pareto_front, period, start_date, end_date, current_portfolio_value=10000, n_strategies=10, leverage=3):
     """
     Run backtest for ensemble of strategies with equal capital allocation.
     output: Portfolio combined_pf, Series combined_performance, and List[Params] params (processed version of strategies)
     """
+    ensemble_strategies = select_diverse_strategies(cleaned_pareto_front, n_strategies=n_strategies)
+    ensemble_count = len(ensemble_strategies)
+    print(f"\nEnsemble strategies for period {period+1}:")
+    for i, strategy in enumerate(ensemble_strategies):
+        window, entry, exit_, sell_threshold, *pos_sizing = strategy
+        print(f"\nStrategy {i+1}: RSI={window}, Entry={entry}, Exit={exit_}, "
+                f"Sell={sell_threshold}% \nPosition Sizing={[f'{x:.2f}' for x in pos_sizing]}")
+        print("Fitness: [" + ", ".join(f"{v:.2f}" for v in strategy.fitness.values) + "]")
     
-    params = []
-    for individual in strategies:
+    # set initial capital per strategy
+    capital_per_strategy = current_portfolio_value / ensemble_count
+    print(f"   Total available capital: ${current_portfolio_value:.2f}")
+    print(f"   Capital per strategy: ${capital_per_strategy:.2f}")
+        
+    # run ensemble backtest on out-of-sample period
+    print(f"Running ensemble backtest with {len(ensemble_strategies)} strategies...")
+    print(f"Capital per strategy: ${capital_per_strategy:,}")
+
+    ensemble_params = []
+    for individual in ensemble_strategies:
         window, entry, exit_, sell_threshold, *pos_sizing = individual
-        params.append(Params(
+        ensemble_params.append(Params(
             window=window,
             entry=entry,
             exit=exit_,
@@ -181,7 +197,7 @@ def run_ensemble_backtest(strategies, start_date, end_date, initial_capital_per_
             position_sizing=np.array(pos_sizing)
         ))
 
-    pfs = backtest.run(params, start_date, end_date, initial_capital_per_strategy, leverage=leverage)
+    pfs = backtest.run(ensemble_params, start_date, end_date, capital_per_strategy, leverage=leverage)
     
     combined_performance = pfs.value().sum(axis=1)
     
@@ -190,13 +206,26 @@ def run_ensemble_backtest(strategies, start_date, end_date, initial_capital_per_
         size = 1,
         freq=pfs.wrapper.freq
     )
+    portfolio_value = combined_performance.iloc[-1]
+    benchmark = vbt.Portfolio.from_holding(close=spxt[start_date:end_date], freq='1D')
+    combined_metrics = calc_metrics(combined_pf, benchmark, ensemble_params)
+    period_return = (combined_performance.iloc[-1] / combined_performance.iloc[0]) - 1
     
-    return combined_pf, combined_performance, params
+    print(f"\nEnsemble out-of-sample performance:")
+    print(f"   Starting Value: ${current_portfolio_value:.2f}")
+    print(f"   Final Value: ${portfolio_value:.2f}")
+    print(f"   Period Return: {period_return:.2%}")
+    print(f"   Benchmark Return: {benchmark.total_return():.2%}")
+    print(f"   Max Drawdown: {combined_metrics['drawdown']:.2%}")
+    print(f"   Rel Drawdown: {combined_metrics['rel_drawdown']:.2%}")
+    print(f"   Sharpe Ratio: {combined_metrics['sharpe']:.3f}")
+    print(f"   Sortino Ratio: {combined_metrics['sortino']:.3f}")
+    print(f"   Number of strategies: {len(ensemble_strategies)}")
+        
+    return ensemble_strategies, portfolio_value
 
 def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sample_months=12, 
-                             max_time_minutes=5, stall_generations=5, max_generations = 100, pop_size=500, n_ensemble=10, leverage=3, fitness_config=None):
-    engine = create_engine()
-    
+                             max_time_minutes=5, stall_generations=5, max_generations = 100, pop_size=500, n_ensemble=10, leverage=3, fitness_config=None):    
     run_id = insert_new_run(engine, start_date, end_date, in_sample_months, 
                    out_sample_months, pop_size, n_ensemble, 
                    leverage, fitness_config)
@@ -205,16 +234,17 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
     if fitness_config:
         go.set_fitness_config(fitness_config)
 
+    # dynamic reference point based on selected metrics
+    ref_points = []
+    for metric in fitness_config.selected_metrics:
+        params = fitness_config.available_metrics[metric]
+        ref_points.append(params[2])
+        
     start_date = pd.Timestamp(start_date)
     end_date = pd.Timestamp(end_date)
     
     total_months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
     num_periods = (total_months - in_sample_months) // out_sample_months + 1
-    
-    cumulative_values = [] 
-    
-    df = connect_time_series(engine, "test_data")
-    spxt = df["SPX Close"]
     
     print(f"\n{'='*80}")
     print(f"WALK-FORWARD OPTIMIZATION WITH ENSEMBLE")
@@ -247,7 +277,8 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         print(f"Out-of-sample: {out_sample_start_str} to {out_sample_end_str}")
         print(f"{'='*80}\n")
         
-        pareto_front, generations, hypervolume_history = window_backtest(
+        pareto_front = window_backtest(
+            ref_points,
             start_date=in_sample_start_str,
             end_date=in_sample_end_str,
             max_time_minutes=max_time_minutes,
@@ -267,55 +298,19 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
             
         if not cleaned_pareto_front:
             cleaned_pareto_front = pareto_front
-        ensemble_strategies = select_diverse_strategies(cleaned_pareto_front, n_strategies=n_ensemble)
-        ensemble_count = len(ensemble_strategies)
-        print(f"\nEnsemble strategies for period {period+1}:")
-        for i, strategy in enumerate(ensemble_strategies):
-            window, entry, exit_, sell_threshold, *pos_sizing = strategy
-            print(f"\nStrategy {i+1}: RSI={window}, Entry={entry}, Exit={exit_}, "
-                  f"Sell={sell_threshold}% \nPosition Sizing={[f'{x:.2f}' for x in pos_sizing]}")
-            print("Fitness: [" + ", ".join(f"{v:.2f}" for v in strategy.fitness.values) + "]")
         
-        # set initial capital per strategy
-        total_capital = current_portfolio_value
-        capital_per_strategy = total_capital / ensemble_count
-        print(f"   Total available capital: ${total_capital:.2f}")
-        print(f"   Capital per strategy: ${capital_per_strategy:.2f}")
-        
-        # run ensemble backtest on out-of-sample period
-        print(f"Running ensemble backtest with {len(ensemble_strategies)} strategies...")
-        print(f"Capital per strategy: ${capital_per_strategy:,}")
-        combined_pf, combined_performance, ensemble_params = run_ensemble_backtest(
-            ensemble_strategies, 
+        ensemble_strategies, portfolio_value = run_ensemble_backtest(
+            cleaned_pareto_front, 
             out_sample_start_str, 
             out_sample_end_str, 
-            capital_per_strategy,
+            current_portfolio_value,
             leverage=leverage
         )
         
-        if combined_performance is None or len(combined_performance) == 0:
-            print(f"No valid ensemble results for period {period+1}")
-            continue
-        
-        cumulative_values.append(combined_performance)
-        current_portfolio_value = combined_performance.iloc[-1]
-        benchmark = vbt.Portfolio.from_holding(close=spxt[out_sample_start:out_sample_end], freq='1D')
-        combined_metrics = calc_metrics(combined_pf, benchmark, ensemble_params)
-        period_return = (combined_performance.iloc[-1] / combined_performance.iloc[0]) - 1
-                
-        print(f"\nEnsemble out-of-sample performance:")
-        print(f"   Starting Value: ${combined_performance.iloc[0]:.2f}")
-        print(f"   Final Value: ${current_portfolio_value:.2f}")
-        print(f"   Period Return: {period_return:.2%}")
-        print(f"   Benchmark Return: {benchmark.total_return():.2%}")
-        print(f"   Max Drawdown: {combined_metrics['drawdown']:.2%}")
-        print(f"   Rel Drawdown: {combined_metrics['rel_drawdown']:.2%}")
-        print(f"   Sharpe Ratio: {combined_metrics['sharpe']:.3f}")
-        print(f"   Sortino Ratio: {combined_metrics['sortino']:.3f}")
-        print(f"   Number of strategies: {len(ensemble_strategies)}")
+        current_portfolio_value = portfolio_value
         
         if period < num_periods - 1:
-            current_start = current_start + pd.DateOffset(months=out_sample_months)
+            current_start = current_start - pd.DateOffset(months=out_sample_end)
         
         period_id = insert_period_summary(engine, run_id, period, current_start, 
                           in_sample_end, out_sample_end, 

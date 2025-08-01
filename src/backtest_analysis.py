@@ -14,8 +14,12 @@ def rebuild_performance(run_id):
     # print(run)
     
     strategies = connect(engine, "wfo_strategy")
-    strategies = strategies[strategies['run_id'] == run_id]
-    
+    strategies = (
+        strategies
+        [strategies['run_id'] == run_id]
+        .sort_values(by='period_id')
+        .reset_index(drop=True)
+    )    
     # print(f"length of strategies: {len(strategies)}")
     start_date = pd.to_datetime(run['start_date'].iloc[0]).date()
     end_date = pd.to_datetime(run['end_date'].iloc[0]).date()
@@ -154,6 +158,7 @@ def PCA_analysis(run_id):
     plt.show()
 
     pca_df = pd.DataFrame(pca_data, columns=labels)
+
 
     plt.title('My PCA Graph')
     plt.scatter(pca_df.PC1, pca_df.PC2)
