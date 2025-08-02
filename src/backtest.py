@@ -20,6 +20,12 @@ class Params:
             )
         self.position_sizing = arr
 
+engine = create_engine()
+df = connect_time_series(engine, "test_data")
+price = df["SPX Close"]
+window_range = np.arange(3, 21)
+rsi = RSI.run(price, window=window_range, ewm=True)
+
 def parse(input: pd.Series, wait: int) -> pd.Series: # cooldown period
     arr = input.values.astype(bool)
     out = np.zeros_like(arr)
@@ -93,19 +99,13 @@ def apply(price, prelim_entry, prelim_exit, size, sell_threshold):
 
     return size_array
 
-def run(params, start_date, end_date, initial_capital=10000, leverage=3):
-    engine = create_engine()
-    df = connect_time_series(engine, "test_data")
-    
-    price = df["SPX Close"]
+def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, leverage=3):    
     if leverage < 2: 
         leverage = 2
     elif leverage > 4: 
         leverage = 4
     letf = df[f"{leverage}x LETF"]
     
-    window_range = np.arange(3, 21)
-    rsi = RSI.run(price, window=window_range, ewm=True)
     windows = np.array([param.window for param in params])
     idx = [(w, True) for w in windows]
     rsi_data = rsi.rsi.loc[start_date:end_date, idx]
@@ -116,10 +116,11 @@ def run(params, start_date, end_date, initial_capital=10000, leverage=3):
     sell_thresholds = np.array([param.sell_threshold for param in params])
     
     letf = letf.loc[start_date:end_date]
-    price = price.loc[start_date:end_date]
+    price = df["SPX Close"].loc[start_date:end_date]
     
     entry_mask = rsi_data < entries
     exit_mask = rsi_data > exits
+    entry_mask.loc[stop_entry_date:] = False
     
     prelim_entries = pd.DataFrame(
         {i: parse(entry_mask.iloc[:, i], windows[i]) 

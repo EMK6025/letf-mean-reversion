@@ -1,8 +1,6 @@
-import pandas as pd
-import backtest
-from backtest import Params
-from engine import create_engine, connect_time_series
 from vectorbt import Portfolio
+from engine import create_engine, connect_time_series
+
 import numpy as np
 import vectorbt as vbt
 from deap import base, creator, tools
@@ -50,6 +48,7 @@ def create_individual():
     ]
 
 def evaluate(pop, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
+    from backtest import Params, run
     config = get_fitness_config()
     
     params = []
@@ -63,7 +62,7 @@ def evaluate(pop, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
             position_sizing=np.array(pos_sizing)
         ))
 
-    pfs = backtest.run(params, start_date=start_date, end_date=end_date, leverage=leverage)
+    pfs = run(params, start_date=start_date, end_date=end_date, stop_entry_date=end_date, leverage=leverage)
     
     # get all metrics
     metrics_dict = calc_metrics(pfs, benchmark, params)
