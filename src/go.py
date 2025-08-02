@@ -12,8 +12,8 @@ warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
 vbt.settings.array_wrapper['freq'] = '1D'
 
 WINDOW_MIN, WINDOW_MAX = 3, 20
-ENTRY_MIN, ENTRY_MAX = 0, 50
-EXIT_MIN, EXIT_MAX = 50,100
+ENTRY_MIN, ENTRY_MAX = 10, 50
+EXIT_MIN, EXIT_MAX = 50,90
 SELL_THRESH_MIN, SELL_THRESH_MAX = 0,100
 POS_SIZE_MIN, POS_SIZE_MAX = 0.0, 1.0
 
