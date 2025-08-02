@@ -169,20 +169,23 @@ def run_ensemble_backtest(cleaned_pareto_front, period, start_date, target_backt
     """
     from vectorbt import Portfolio
     from math import ceil
-    from wfo_sql import insert_new_run, insert_period_summary, insert_period_strategies
     
     tentative_end_date = start_date + pd.DateOffset(months=ceil(target_backtest_duration_months * 1.5))
     target_end_date = start_date + pd.DateOffset(months=target_backtest_duration_months)
     start_date_str = start_date.strftime('%Y-%m-%d')
     tentative_end_date_str = tentative_end_date.strftime('%Y-%m-%d')
-    ensemble_strategies = select_diverse_strategies(cleaned_pareto_front, n_strategies=n_strategies)
-    ensemble_count = len(ensemble_strategies)
-    print(f"\nEnsemble strategies for period {period+1}:")
-    for i, strategy in enumerate(ensemble_strategies):
-        window, entry, exit_, sell_threshold, *pos_sizing = strategy
-        print(f"\nStrategy {i+1}: RSI={window}, Entry={entry}, Exit={exit_}, "
-                f"Sell={sell_threshold}% \nPosition Sizing={[f'{x:.2f}' for x in pos_sizing]}")
-        print("Fitness: [" + ", ".join(f"{v:.2f}" for v in strategy.fitness.values) + "]")
+    if len(cleaned_pareto_front) > n_strategies:
+        ensemble_strategies = select_diverse_strategies(cleaned_pareto_front, n_strategies=n_strategies)
+        ensemble_count = len(ensemble_strategies)
+        print(f"\nEnsemble strategies for period {period+1}:")
+        for i, strategy in enumerate(ensemble_strategies):
+            window, entry, exit_, sell_threshold, *pos_sizing = strategy
+            print(f"\nStrategy {i+1}: RSI={window}, Entry={entry}, Exit={exit_}, "
+                    f"Sell={sell_threshold}% \nPosition Sizing={[f'{x:.2f}' for x in pos_sizing]}")
+            print("Fitness: [" + ", ".join(f"{v:.2f}" for v in strategy.fitness.values) + "]")
+    else:
+        ensemble_strategies = cleaned_pareto_front
+        ensemble_count=n_strategies
     
     # set initial capital per strategy
     capital_per_strategy = current_portfolio_value / ensemble_count
@@ -209,7 +212,10 @@ def run_ensemble_backtest(cleaned_pareto_front, period, start_date, target_backt
     records = pfs.trades.records_readable.copy()
     records = records[records['Status'] == 'Closed']["Exit Timestamp"]
     end_date = records.max()
+    if pd.isna(end_date):
+        end_date = target_end_date
     end_date_str = end_date.strftime('%Y-%m-%d')
+
     
     benchmark = Portfolio.from_holding(close=spxt[start_date_str:end_date_str], freq='1D')
     
@@ -240,16 +246,17 @@ def run_ensemble_backtest(cleaned_pareto_front, period, start_date, target_backt
     print(f"   Sortino Ratio: {combined_metrics['sortino']:.3f}")
     print(f"   Number of strategies: {len(ensemble_strategies)}")
         
-    return ensemble_strategies, portfolio_value, end_date
+    return ensemble_strategies, portfolio_value, end_date, combined_aligned
 
 def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sample_months=12, 
                              max_time_minutes=5, stall_generations=5, max_generations = 100, pop_size=500, n_ensemble=10, leverage=3, fitness_config=None):    
     from go import set_fitness_config
-    # run_id = insert_new_run(engine, start_date, end_date, in_sample_months, 
-    #                out_sample_months, pop_size, n_ensemble, 
-    #                leverage, fitness_config)
+    from wfo_sql import insert_new_run, insert_period_summary, insert_period_strategies
+
+    run_id = insert_new_run(engine, start_date, end_date, in_sample_months, 
+                   out_sample_months, pop_size, n_ensemble, 
+                   leverage, fitness_config)
     
-    run_id = 2
     # set fitness configuration if provided
     if fitness_config:
         set_fitness_config(fitness_config)
@@ -319,7 +326,7 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         if not cleaned_pareto_front:
             cleaned_pareto_front = pareto_front
         
-        ensemble_strategies, portfolio_value, actual_end_date = run_ensemble_backtest(
+        ensemble_strategies, portfolio_value, actual_end_date, _ = run_ensemble_backtest(
             cleaned_pareto_front, 
             period,
             out_sample_start, 
@@ -334,9 +341,9 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
             current_start = actual_end_date - pd.DateOffset(months=in_sample_months)
         
         
-        # period_id = insert_period_summary(engine, run_id, period, current_start, 
-        #                   in_sample_end, out_sample_end, 
-        #                   pop_size, len(ensemble_strategies))
+        period_id = insert_period_summary(engine, run_id, period, current_start, 
+                          in_sample_end, out_sample_end, 
+                          pop_size, len(ensemble_strategies))
         
-        # # pareto_front is a List[Individual]
-        # insert_period_strategies(engine, run_id, period_id, ensemble_strategies)
+        # pareto_front is a List[Individual]
+        insert_period_strategies(engine, run_id, period_id, ensemble_strategies)

@@ -30,7 +30,8 @@ def rebuild_performance(run_id):
     total_months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
     num_periods = (total_months - in_sample_months) // out_sample_months + 1
     
-    backtest_start_date = start_date + pd.DateOffset(months=in_sample_months)
+    # take start date, then offset by first in-sample period plus 1 day
+    backtest_start_date = start_date + pd.DateOffset(months=in_sample_months) + pd.DateOffset(days=1)
     
     for col in ['pos_sizing', 'fitness_values']:
         strategies[col] = strategies[col].apply(lambda x: [round(v, 2) for v in x])
@@ -40,15 +41,14 @@ def rebuild_performance(run_id):
 
     current_portfolio_value = spx_after_date
     cumulative_values = pd.DataFrame()
-    
+    period_start_date = backtest_start_date
+       
     first = strategies['period_id'].iloc[0]
-    
     for period in range(first, first + num_periods):
-        period_strategies = strategies[strategies['period_id'] == period]
-        period_start_date = backtest_start_date + pd.DateOffset(months=(period-first)*out_sample_months)
-        period_end_date = period_start_date + pd.DateOffset(months=out_sample_months)
+        run_period = period - first
         
-        capital_per_strategy = current_portfolio_value / len(period_strategies)
+        period_strategies = strategies[strategies['period_id'] == period]
+        period_end_date = backtest_start_date + pd.DateOffset(months=out_sample_months*(run_period))
         
         period_ensemble = []
         for i in range(0,len(period_strategies)):
@@ -58,13 +58,21 @@ def rebuild_performance(run_id):
                                     int(period_strategies["sell_threshold"].iloc[i])]
                                    + [float(x) for x in period_strategies["pos_sizing"].iloc[i]])
         
-        print(f"Period {period + 1 - first}: Start Date {period_start_date}")
-        print(f"                 End Value {current_portfolio_value:.2f}")
-        
-        combined_pf, combined_performance, params = run_ensemble_backtest(period_ensemble, period_start_date, period_end_date, capital_per_strategy, leverage)        
+        _, _, actual_end_date, combined_performance = run_ensemble_backtest(period_ensemble, run_period, 
+                                                                         period_start_date, out_sample_months, 
+                                                                         current_portfolio_value, len(period_ensemble), leverage)        
+
+        print(cumulative_values.dtypes)
+        print(combined_performance.dtypes)
         cumulative_values = pd.concat([cumulative_values, combined_performance], axis=0)
         current_portfolio_value = combined_performance.iloc[-1]
         
+        print(f"Period {run_period}: Start Date {period_start_date}")
+        print(f"                 Target End Date {period_end_date}")
+        print(f"                 Actual End Date {actual_end_date}")
+        print(f"                 Final Value {current_portfolio_value}")
+
+        period_start_date = actual_end_date + pd.DateOffset(days=1)
     return cumulative_values, backtest_start_date, leverage
 
 def analyze_wfo(run_id):
@@ -133,6 +141,7 @@ def PCA_analysis(run_id):
     run = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
     strategies = connect(engine, "wfo_strategy")
     strategies = strategies[strategies['run_id'] == run_id]
+    
     # grab run.fitness config
     fitness = strategies['fitness_values']
     metrics = run['fitness_config'].iloc[0]['selected_metrics']
@@ -160,30 +169,29 @@ def PCA_analysis(run_id):
     pca_df = pd.DataFrame(pca_data, columns=labels)
 
 
-    plt.title('My PCA Graph')
-    plt.scatter(pca_df.PC1, pca_df.PC2)
+    # plt.title('My PCA Graph')
+    # plt.scatter(pca_df.PC1, pca_df.PC2)
     
-    plt.xlabel('PC1 = {0}%'.format(per_var[0]))
-    plt.ylabel('PC2 = {0}%'.format(per_var[1]))
-    plt.show()
-
-    # fig = plt.figure()
-    # ax = fig.add_subplot(111, projection='3d')
-
-
-    # ax.scatter(pca_df.PC1, pca_df.PC2, pca_df.PC3)
-    # ax.set_xlabel('PC1 = {0}%'.format(per_var[0]))
-    # ax.set_ylabel('PC2 = {0}%'.format(per_var[1]))
-    # ax.set_zlabel('PC3 = {0}%'.format(per_var[2]))  # <-- this sets the z-axis label
+    # plt.xlabel('PC1 = {0}%'.format(per_var[0]))
+    # plt.ylabel('PC2 = {0}%'.format(per_var[1]))
     # plt.show()
-    
-    # loading_scores = pd.Series(pca.components_[0], index=df.key)
-    # sorted_loading_scores = loading_scores.abs().sort_values(ascending=False)
-    # top_X_features = sorted_loading_scores[0:8].index.values
-    # print(loading_scores[top_X_features])
 
-    # # # 3) Inspect results
-    # # print(pca.explained_variance_)        # the eigenvalues (variances explained by each PC)
-    # # print(pca.explained_variance_ratio_)  # fraction of total variance per PC
-    # # print(pca.components_)
-    # # # with metrics as the column names, merge with fitness which has the corresponding row samples and column features
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+
+    ax.scatter(pca_df.PC1, pca_df.PC2, pca_df.PC3)
+    ax.set_xlabel('PC1 = {0}%'.format(per_var[0]))
+    ax.set_ylabel('PC2 = {0}%'.format(per_var[1]))
+    ax.set_zlabel('PC3 = {0}%'.format(per_var[2]))
+    ax.set_title('My PCA Graph')
+    plt.show()
+    
+    loading_scores = pd.Series(pca.components_[0], index=df.keys())
+    sorted_loading_scores = loading_scores.abs().sort_values(ascending=False)
+    top_X_features = sorted_loading_scores[0:8].index.values
+    print(loading_scores[top_X_features])
+
+    print(pca.explained_variance_)        # the eigenvalues (variances explained by each PC)
+    print(pca.explained_variance_ratio_)  # fraction of total variance per PC
+    # print(pca.components_)

@@ -9,7 +9,8 @@ def wfo():
     end_date = "2024-12-31"
 
     custom_config = FitnessConfig(
-        selected_metrics=['sharpe', 'rel_drawdown', 'alpha', 'activeness', 'pain_ratio', 'var'],
+        selected_metrics=['sortino', 'sharpe', 'rel_drawdown', 'alpha', 
+                          'activeness', 'drawdown', 'annual_return', 'pain_ratio', 'var', 'information_ratio'],
         enable_bottom_percentile_filter=True,
         bottom_percentile=10.0
     )
@@ -18,11 +19,11 @@ def wfo():
         walk_forward_optimization(
             start_date=start_date,
             end_date=end_date,  
-            in_sample_months=120,
-            out_sample_months=12,
-            max_time_minutes=20,
+            in_sample_months=60,
+            out_sample_months=6,
+            max_time_minutes=10000,
             stall_generations=10,
-            max_generations=100,
+            max_generations=1000,
             pop_size=1000,
             n_ensemble=10,
             leverage=3,
@@ -31,18 +32,26 @@ def wfo():
     except Exception as e:
         print("fail 1")
         traceback.print_exc()
-        
-    try: 
+    
+    # custom_config = FitnessConfig(
+    #     selected_metrics=['sortino', 'sharpe', 'rel_drawdown', 
+    #                       'alpha', 'activeness', 'var', 
+    #                       'pain_ratio', 'information_ratio'],
+    #     enable_bottom_percentile_filter=True,
+    #     bottom_percentile=10.0
+    # )
+            
+    try:
         walk_forward_optimization(
             start_date=start_date,
             end_date=end_date,  
             in_sample_months=60,
             out_sample_months=6,
-            max_time_minutes=20,
+            max_time_minutes=10000,
             stall_generations=10,
-            max_generations=100,
+            max_generations=1000,
             pop_size=1000,
-            n_ensemble=10,
+            n_ensemble=50,
             leverage=3,
             fitness_config=custom_config
         )
@@ -87,7 +96,7 @@ if __name__ == "__main__":
     # reset_wfo()
     # list_runs()
     
-    # PCA(1)
+    PCA(1)
     # x = input("go next?")
     # PCA(2)
     # x = input("go next?")
@@ -109,13 +118,13 @@ if __name__ == "__main__":
     #     """, engine)
     # print(run)
     
-    # analyze_run(11)
+    # analyze_run(1)
     # x = input("go next")
     # analyze_run(7)
     
-    wfo()
+    # wfo()
 
-    # clear_run([10])
+    # clear_run([2])
     # list_runs()
 
     # from backtest import Params, run
@@ -131,4 +140,3 @@ if __name__ == "__main__":
     # records = records[records['Status'] == 'Closed']["Exit Timestamp"].copy()
     # final_exit = records.max()
     # print("last exit after cutoff:", pd.Timestamp(final_exit))
-
