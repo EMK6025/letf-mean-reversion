@@ -93,6 +93,8 @@ def window_backtest(ref_points, start_date, end_date, max_time_minutes=10, stall
             stall_counter = 0
             best_hypervolume = current_hypervolume
             print(f"NEW BEST! Hypervolume = {current_hypervolume:.4f} (+{improvement:.4f}), Pareto size = {len(pareto_front)}")
+        elif generation == 0:
+            print(f"Hypervolume = {current_hypervolume:.4f}, Pareto size = {len(pareto_front)}")
         else:
             stall_counter += 1
             print(f"Hypervolume = {current_hypervolume:.4f} (Stall: {stall_counter}/{stall_generations}), Pareto size = {len(pareto_front)}")
@@ -108,7 +110,7 @@ def window_backtest(ref_points, start_date, end_date, max_time_minutes=10, stall
     print(f"Final generation: {generation}")
     print(f"Final Pareto front size: {len(pareto_front)}")
     
-    return pareto_front
+    return pareto_front, generation, best_hypervolume
 
 def select_diverse_strategies(pareto_front, n_strategies=10):
     from sklearn.preprocessing import StandardScaler
@@ -246,7 +248,7 @@ def run_ensemble_backtest(cleaned_pareto_front, period, start_date, target_backt
     print(f"   Sortino Ratio: {combined_metrics['sortino']:.3f}")
     print(f"   Number of strategies: {len(ensemble_strategies)}")
         
-    return ensemble_strategies, portfolio_value, end_date, combined_aligned
+    return ensemble_strategies, combined_aligned, end_date
 
 def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sample_months=12, 
                              max_time_minutes=5, stall_generations=5, max_generations = 100, pop_size=500, n_ensemble=10, leverage=3, fitness_config=None):    
@@ -271,13 +273,11 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
     end_date = pd.Timestamp(end_date)
     
     total_months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
-    num_periods = (total_months - in_sample_months) // out_sample_months + 1
     
     print(f"\n{'='*80}")
     print(f"WALK-FORWARD OPTIMIZATION WITH ENSEMBLE")
     print(f"In-sample period: {in_sample_months} months, Out-of-sample period: {out_sample_months} months")
     print(f"Ensemble size: {n_ensemble} strategies per period")
-    print(f"Total periods: {num_periods}")
     print(f"{'='*80}\n")
     
     current_start = start_date
@@ -285,26 +285,29 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
     spx_after_date = df["SPX Close"][first_in_sample_end:].iloc[0]
     current_portfolio_value = spx_after_date
     
-    for period in range(num_periods):
+    period = 1
+    
+    while True:
         in_sample_end = current_start + pd.DateOffset(months=in_sample_months)
         out_sample_start = in_sample_end + pd.DateOffset(days=1)
-        out_sample_end = start_date + pd.DateOffset(months=in_sample_months+out_sample_months*(period+1))
+        out_sample_end = start_date + pd.DateOffset(months=in_sample_months+out_sample_months*(period))
         
         if out_sample_end > end_date:
             out_sample_end = end_date
-        
+        if out_sample_start >= end_date: 
+            break
         in_sample_start_str = current_start.strftime('%Y-%m-%d')
         in_sample_end_str = in_sample_end.strftime('%Y-%m-%d')
         out_sample_start_str = out_sample_start.strftime('%Y-%m-%d')
         out_sample_end_str = out_sample_end.strftime('%Y-%m-%d')
         
         print(f"\n{'='*80}")
-        print(f"PERIOD {period+1}/{num_periods}")
+        print(f"PERIOD {period}")
         print(f"In-sample: {in_sample_start_str} to {in_sample_end_str}")
         print(f"Target Out-of-sample: {out_sample_start_str} to {out_sample_end_str}")
         print(f"{'='*80}\n")
         
-        pareto_front = window_backtest(
+        pareto_front, generation_count, hypervolume = window_backtest(
             ref_points,
             start_date=in_sample_start_str,
             end_date=in_sample_end_str,
@@ -326,7 +329,7 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         if not cleaned_pareto_front:
             cleaned_pareto_front = pareto_front
         
-        ensemble_strategies, portfolio_value, actual_end_date, _ = run_ensemble_backtest(
+        ensemble_strategies, combined_performance, actual_end_date = run_ensemble_backtest(
             cleaned_pareto_front, 
             period,
             out_sample_start, 
@@ -335,15 +338,17 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
             leverage=leverage
         )
 
-        current_portfolio_value = portfolio_value
+        current_portfolio_value = combined_performance.iloc[-1]
         
-        if period < num_periods - 1:
-            current_start = actual_end_date - pd.DateOffset(months=in_sample_months)
+        current_start = actual_end_date - pd.DateOffset(months=in_sample_months)
         
         
         period_id = insert_period_summary(engine, run_id, period, current_start, 
                           in_sample_end, out_sample_end, 
-                          pop_size, len(ensemble_strategies))
+                          pop_size, len(ensemble_strategies), generation_count=generation_count, final_hypervolume = hypervolume
+                          )
         
         # pareto_front is a List[Individual]
         insert_period_strategies(engine, run_id, period_id, ensemble_strategies)
+        
+        period += 1

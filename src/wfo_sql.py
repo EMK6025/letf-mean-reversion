@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Table, Column, Integer, Date, Float, JSON, 
+    Null, Table, Column, Integer, Date, Float, JSON, 
     ARRAY, ForeignKey, CheckConstraint, 
     UniqueConstraint, MetaData, text, insert
 )
@@ -35,6 +35,8 @@ wfo_period_summary = Table(
     Column("out_sample_end",    Date,    nullable=False),
     Column("pop_size",          Integer,      nullable=False),
     Column("n_strategies",      Integer,      nullable=False),
+    Column("generation_count", Integer,      nullable=False),
+    Column("final_hypervolume", Float,      nullable=False),
     UniqueConstraint("run_id", "period_index", name="unique_period_per_run")
 ) 
 
@@ -99,7 +101,7 @@ def insert_new_run(engine, start_date, end_date, in_sample_months,
 
 def insert_period_summary(engine, run_id, period_index, in_sample_start, 
                           in_sample_end, out_sample_end, 
-                          pop_size, n_strategies):
+                          pop_size, n_strategies, generation_count, final_hypervolume):
     input = {
         "run_id": run_id,
         "period_index": period_index,
@@ -107,7 +109,9 @@ def insert_period_summary(engine, run_id, period_index, in_sample_start,
         "in_sample_end": in_sample_end, 
         "out_sample_end": out_sample_end, 
         "pop_size": pop_size, 
-        "n_strategies": n_strategies
+        "n_strategies": n_strategies,
+        "generation_count": generation_count,
+        "final_hypervolume": final_hypervolume
     }
     statement = insert(wfo_period_summary).values(**input).returning(wfo_period_summary.c.period_id)
     with engine.begin() as conn:
@@ -137,41 +141,45 @@ def insert_period_strategies(engine, run_id, period_id, population):
         result = conn.execute(statement)
     return result.rowcount == len(inputs)
 
+
+
 '''
 CREATE TABLE wfo_run (
-  run_id            SERIAL    PRIMARY KEY,
-  start_date        DATE      NOT NULL,
-  end_date          DATE      NOT NULL,
-  in_sample_months  INT       NOT NULL,
-  out_sample_months INT       NOT NULL,
-  pop_size          INT       NOT NULL,
-  n_ensemble        INT       NOT NULL,
-  leverage          INT       NOT NULL,
-  fitness_config    JSONB     NOT NULL
+    run_id            SERIAL    PRIMARY KEY,
+    start_date        DATE      NOT NULL,
+    end_date          DATE      NOT NULL,
+    in_sample_months  INT       NOT NULL,
+    out_sample_months INT       NOT NULL,
+    pop_size          INT       NOT NULL,
+    n_ensemble        INT       NOT NULL,
+    leverage          INT       NOT NULL,
+    fitness_config    JSONB     NOT NULL
 );
 
 CREATE TABLE wfo_period_summary (
-  period_id         SERIAL    PRIMARY KEY,
-  run_id            INT       NOT NULL  REFERENCES wfo_run(run_id),
-  period_index      INT       NOT NULL,
-  in_sample_start   DATE      NOT NULL,
-  in_sample_end     DATE      NOT NULL,
-  out_sample_end    DATE      NOT NULL,
-  pop_size          INT       NOT NULL,
-  n_strategies      INT       NOT NULL,
-  UNIQUE(run_id, period_index)
+    period_id         SERIAL    PRIMARY KEY,
+     run_id           INT       NOT NULL  REFERENCES wfo_run(run_id),
+    period_index      INT       NOT NULL,
+    in_sample_start   DATE      NOT NULL,
+    in_sample_end     DATE      NOT NULL,
+    out_sample_end    DATE      NOT NULL,
+    pop_size          INT       NOT NULL,
+    n_strategies      INT       NOT NULL,
+    generation_count  INT       NOT NULL,
+    final_hypervolume FLOAT     NOT NULL,
+    UNIQUE(run_id, period_index)
 );
 
 # one row per strategy in each ensemble
 CREATE TABLE wfo_strategy (
-    strategy_id       SERIAL    PRIMARY KEY,
-    run_id            INT       NOT NULL,
-    period_id        INT        NOT NULL,
-    window            INT       NOT NULL,
-    entry             INT       NOT NULL,
-    exit              INT       NOT NULL,
-    sell_threshold    FLOAT     NOT NULL,
-    pos_sizing        FLOAT[]   NOT NULL,
-    fitness_values    JSONB     NOT NULL
+    strategy_id     SERIAL    PRIMARY KEY,
+    run_id          INT       NOT NULL,
+    period_id       INT       NOT NULL,
+    window          INT       NOT NULL,
+    entry           INT       NOT NULL,
+    exit            INT       NOT NULL,
+    sell_threshold  FLOAT     NOT NULL,
+    pos_sizing      FLOAT[]   NOT NULL,
+    fitness_values  JSONB     NOT NULL
 );
 '''

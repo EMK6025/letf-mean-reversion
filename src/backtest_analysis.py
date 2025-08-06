@@ -6,8 +6,12 @@ from datetime import date
 from engine import create_engine, connect, connect_time_series
 
 def rebuild_performance(run_id):
+    
+    # I forgot about period_index, holy crap fix this
+    
     from wfo import run_ensemble_backtest
-
+    import os
+    import contextlib
     engine = create_engine()
     run = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
     
@@ -21,8 +25,8 @@ def rebuild_performance(run_id):
         .reset_index(drop=True)
     )    
     # print(f"length of strategies: {len(strategies)}")
-    start_date = pd.to_datetime(run['start_date'].iloc[0]).date()
-    end_date = pd.to_datetime(run['end_date'].iloc[0]).date()
+    start_date = pd.to_datetime(run['start_date'].iloc[0])
+    end_date = pd.to_datetime(run['end_date'].iloc[0])
     in_sample_months = run['in_sample_months'].iloc[0]
     out_sample_months = run['out_sample_months'].iloc[0]
     leverage = run['leverage'].iloc[0]
@@ -44,11 +48,15 @@ def rebuild_performance(run_id):
     period_start_date = backtest_start_date
        
     first = strategies['period_id'].iloc[0]
-    for period in range(first, first + num_periods):
+    period = first
+    while True:
         run_period = period - first
         
         period_strategies = strategies[strategies['period_id'] == period]
         period_end_date = backtest_start_date + pd.DateOffset(months=out_sample_months*(run_period))
+        
+        if period_end_date > end_date:
+            period_end_date = end_date
         
         period_ensemble = []
         for i in range(0,len(period_strategies)):
@@ -57,8 +65,9 @@ def rebuild_performance(run_id):
                                     int(period_strategies["exit"].iloc[i]), 
                                     int(period_strategies["sell_threshold"].iloc[i])]
                                    + [float(x) for x in period_strategies["pos_sizing"].iloc[i]])
-        
-        _, _, actual_end_date, combined_performance = run_ensemble_backtest(period_ensemble, run_period, 
+        with open(os.devnull, 'w') as fnull:
+            with contextlib.redirect_stdout(fnull):
+                _, combined_performance, actual_end_date = run_ensemble_backtest(period_ensemble, run_period, 
                                                                          period_start_date, out_sample_months, 
                                                                          current_portfolio_value, len(period_ensemble), leverage)        
 
@@ -70,9 +79,9 @@ def rebuild_performance(run_id):
         print(f"Period {run_period}: Start Date {period_start_date}")
         print(f"                 Target End Date {period_end_date}")
         print(f"                 Actual End Date {actual_end_date}")
-        print(f"                 Final Value {current_portfolio_value}")
-
         period_start_date = actual_end_date + pd.DateOffset(days=1)
+        if period_start_date > end_date:
+            break
     return cumulative_values, backtest_start_date, leverage
 
 def analyze_wfo(run_id):
@@ -83,7 +92,7 @@ def analyze_wfo(run_id):
     engine = create_engine()
     df = connect_time_series(engine, "test_data")
     spx = df["SPX Close"][backtest_start_date:]
-    run = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
+
     pfs = Portfolio.from_holding(
         close=cumulative_values,
         size = 1,
@@ -132,7 +141,7 @@ def analyze_wfo(run_id):
     plt.savefig("wfo_analysis.png", dpi=300)  # Save the figure with high resolution
     plt.show()
 
-def PCA_analysis(run_id):
+def analyze_PCA(run_id):
     from sklearn.decomposition import PCA
 
     from sklearn import preprocessing
@@ -195,3 +204,6 @@ def PCA_analysis(run_id):
     print(pca.explained_variance_)        # the eigenvalues (variances explained by each PC)
     print(pca.explained_variance_ratio_)  # fraction of total variance per PC
     # print(pca.components_)
+    
+# def analyze_fit():
+    
