@@ -106,10 +106,17 @@ def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, le
         leverage = 4
     letf = df[f"{leverage}x LETF"]
     
+    # prevent bugs down the line with a portfolio that just does nothing past available data
+    if type(end_date) == str:
+        end_date = min(end_date, df.index[-1].strftime('%Y-%m-%d'))
+    else:
+        end_date = min(end_date, df.index[-1]).strftime('%Y-%m-%d')
+        
     windows = np.array([param.window for param in params])
     idx = [(w, True) for w in windows]
+    
     rsi_data = rsi.rsi.loc[start_date:end_date, idx]
-        
+    
     entries = np.array([param.entry for param in params])
     exits = np.array([param.exit for param in params])
     position_sizes = np.vstack([param.position_sizing for param in params]) 

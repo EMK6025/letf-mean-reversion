@@ -4,18 +4,14 @@ import matplotlib.pyplot as plt
 from vectorbt import Portfolio
 from datetime import date
 from engine import create_engine, connect, connect_time_series
+from vectorbt import settings
+settings.array_wrapper['freq'] = '1D'
 
 def rebuild_performance(run_id):
-    
-    # I forgot about period_index, holy crap fix this
-    
-    from wfo import run_ensemble_backtest
-    import os
-    import contextlib
+    from backtest import run, Params
     engine = create_engine()
-    run = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
-    
-    # print(run)
+    runs = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
+    periods = pd.read_sql(f"SELECT * FROM wfo_period_summary WHERE run_id = {run_id}", engine)
     
     strategies = connect(engine, "wfo_strategy")
     strategies = (
@@ -24,64 +20,82 @@ def rebuild_performance(run_id):
         .sort_values(by='period_id')
         .reset_index(drop=True)
     )    
+    
     # print(f"length of strategies: {len(strategies)}")
-    start_date = pd.to_datetime(run['start_date'].iloc[0])
-    end_date = pd.to_datetime(run['end_date'].iloc[0])
-    in_sample_months = run['in_sample_months'].iloc[0]
-    out_sample_months = run['out_sample_months'].iloc[0]
-    leverage = run['leverage'].iloc[0]
-    
-    total_months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
-    num_periods = (total_months - in_sample_months) // out_sample_months + 1
-    
+    start_date = pd.to_datetime(runs['start_date'].iloc[0])
+    end_date = pd.to_datetime(runs['end_date'].iloc[0])
+    in_sample_months = runs['in_sample_months'].iloc[0]
+    leverage = runs['leverage'].iloc[0]
+        
     # take start date, then offset by first in-sample period plus 1 day
     backtest_start_date = start_date + pd.DateOffset(months=in_sample_months) + pd.DateOffset(days=1)
     
-    for col in ['pos_sizing', 'fitness_values']:
-        strategies[col] = strategies[col].apply(lambda x: [round(v, 2) for v in x])
+    # for col in ['pos_sizing', 'fitness_values']:
+    #     strategies[col] = strategies[col].apply(lambda x: [round(v, 2) for v in x])
 
     df = connect_time_series(engine, "test_data")
     spx_after_date = df["SPX Close"][backtest_start_date:].iloc[0]
 
     current_portfolio_value = spx_after_date
+    
     cumulative_values = pd.DataFrame()
-    period_start_date = backtest_start_date
        
-    first = strategies['period_id'].iloc[0]
-    period = first
+    run_period = 1
+    
     while True:
-        run_period = period - first
+        current_period = periods[periods['period_index'] == run_period].iloc[0]
+        period_id = current_period['period_id']
         
-        period_strategies = strategies[strategies['period_id'] == period]
-        period_end_date = backtest_start_date + pd.DateOffset(months=out_sample_months*(run_period))
-        
+        period_start_date = current_period['in_sample_end'] + pd.DateOffset(days=1)
+        period_end_date = pd.Timestamp(current_period['out_sample_end'])
         if period_end_date > end_date:
             period_end_date = end_date
+            
+        period_strategies = strategies[strategies['period_id'] == period_id]
+        if len(period_strategies) == 0:
+            break        
         
-        period_ensemble = []
+        period_ensemble_params = []
         for i in range(0,len(period_strategies)):
-            period_ensemble.append([int(period_strategies["window"].iloc[i]), 
-                                    int(period_strategies["entry"].iloc[i]), 
-                                    int(period_strategies["exit"].iloc[i]), 
-                                    int(period_strategies["sell_threshold"].iloc[i])]
-                                   + [float(x) for x in period_strategies["pos_sizing"].iloc[i]])
-        with open(os.devnull, 'w') as fnull:
-            with contextlib.redirect_stdout(fnull):
-                _, combined_performance, actual_end_date = run_ensemble_backtest(period_ensemble, run_period, 
-                                                                         period_start_date, out_sample_months, 
-                                                                         current_portfolio_value, len(period_ensemble), leverage)        
-
-        print(cumulative_values.dtypes)
-        print(combined_performance.dtypes)
-        cumulative_values = pd.concat([cumulative_values, combined_performance], axis=0)
-        current_portfolio_value = combined_performance.iloc[-1]
+            period_ensemble_params.append(Params(
+                window=int(period_strategies["window"].iloc[i]),
+                entry=int(period_strategies["entry"].iloc[i]),
+                exit=int(period_strategies["exit"].iloc[i]),
+                sell_threshold=int(period_strategies["sell_threshold"].iloc[i]),
+                position_sizing=np.array([float(x) for x in period_strategies["pos_sizing"].iloc[i]])
+            ))
         
+        initial_capital_per_strategy = current_portfolio_value/len(period_ensemble_params)
+        
+        pfs = run(period_ensemble_params, period_start_date, 
+                  period_end_date, period_end_date, 
+                  initial_capital_per_strategy, leverage)
+        
+        combined_performance = pfs.value().sum(axis=1)
+        
+        pfs = Portfolio.from_holding(
+            close = combined_performance.loc[:end_date],
+            size  = 1,
+            freq  = pfs.wrapper.freq
+        )
+                
+        if not cumulative_values.empty:
+            cumulative_values = pd.concat([cumulative_values, combined_performance], axis=0)
+        else:
+            cumulative_values = combined_performance.copy()
+   
         print(f"Period {run_period}: Start Date {period_start_date}")
-        print(f"                 Target End Date {period_end_date}")
-        print(f"                 Actual End Date {actual_end_date}")
-        period_start_date = actual_end_date + pd.DateOffset(days=1)
+        print(f"                 End Date {period_end_date}")
+        print(f"           Starting value {current_portfolio_value}")
+        print(f"             Ending value {combined_performance.iloc[-1]}")
+        
+        current_portfolio_value = combined_performance.iloc[-1]
+        period_start_date = period_end_date + pd.DateOffset(days=1)
         if period_start_date > end_date:
             break
+        
+        run_period += 1
+        
     return cumulative_values, backtest_start_date, leverage
 
 def analyze_wfo(run_id):
@@ -102,17 +116,17 @@ def analyze_wfo(run_id):
     benchmark = Portfolio.from_holding(
         close=spx, 
         size=1, 
-        freq=pfs.wrapper.freq
+        freq=pfs.wrapper.freq,
     )
 
     returns = pfs.returns()
     benchmark_returns = benchmark.annualized_return()
-    sortino = returns.vbt.returns.sortino_ratio().iloc[0]
-    sharpe = returns.vbt.returns.sharpe_ratio().iloc[0]
-    rel_drawdown = (pfs.max_drawdown() / benchmark.max_drawdown()).iloc[0]
-    drawdown = pfs.max_drawdown().iloc[0]
-    alpha = (pfs.annualized_return() - benchmark.annualized_return()).iloc[0]
-    annual_return = pfs.annualized_return().iloc[0]
+    sortino = returns.vbt.returns.sortino_ratio()
+    sharpe = returns.vbt.returns.sharpe_ratio()
+    rel_drawdown = (pfs.max_drawdown() / benchmark.max_drawdown())
+    drawdown = pfs.max_drawdown()
+    alpha = (pfs.annualized_return() - benchmark.annualized_return())
+    annual_return = pfs.annualized_return()
     
     print("=== Performance Metrics ===")
     print(f"Annualized Return       : {annual_return:.2%}")
@@ -205,5 +219,54 @@ def analyze_PCA(run_id):
     print(pca.explained_variance_ratio_)  # fraction of total variance per PC
     # print(pca.components_)
     
-# def analyze_fit():
+def analyze_fit():
+    import pandas as pd
+    from engine import create_engine, connect
+    import matplotlib.pyplot as plt
+    engine = create_engine()
+    run_ids = pd.read_sql(f"SELECT * FROM wfo_run ORDER BY run_id ASC;", engine)
+    all_periods = pd.read_sql(f"SELECT * from wfo_period_summary ORDER BY run_id ASC;", engine)
+    all_strategies = pd.read_sql(f"SELECT * from wfo_strategy;", engine)
+    gen_to_volume = []
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    for row in run_ids.itertuples(index=False):
+        run     = row.run_id
+        metrics = row.fitness_config["selected_metrics"]
+        run_periods = all_periods[all_periods["run_id"] == run]
+        sorted_alpha = []
+        for period in run_periods['period_id']:
+            period_strategies = all_strategies[(all_strategies['run_id'] == run) & (all_strategies['period_id'] == period)]
+            fitness = period_strategies['fitness_values']
+            fitness = pd.DataFrame(fitness.tolist(), columns=metrics)
+            sorted_alpha.append(round(fitness['alpha'].mean(), 2))
+        generations = run_periods["generation_count"]
+        hypervolume = run_periods["final_hypervolume"]
+        ax.scatter(generations, hypervolume, sorted_alpha)
+        # grab alpha
+        gen_to_volume.extend(list(zip(generations, hypervolume, sorted_alpha)))
+
+    ax.set_title('Generations v.s. Hypervolume')        
+    ax.set_xlabel('Generations')
+    ax.set_ylabel('Hypervolume')
+    ax.set_zlabel('Alpha')
+    plt.show()
+    
+    from sklearn.decomposition import PCA
+
+    from sklearn import preprocessing
+    df = pd.DataFrame(gen_to_volume, columns=["Generations", "Hypervolume", "Alpha"])
+    scaled_df = preprocessing.scale(df) #if column samples, pass in df.T
+
+    pca = PCA()
+    pca.fit(scaled_df)
+    pca_data = pca.transform(scaled_df)
+    loading_scores = pd.Series(pca.components_[0], index=df.keys())
+    sorted_loading_scores = loading_scores.abs().sort_values(ascending=False)
+    top_X_features = sorted_loading_scores[0:8].index.values
+    print(loading_scores[top_X_features])
+
+    # print(pca.explained_variance_)        # the eigenvalues (variances explained by each PC)
+    print(pca.explained_variance_ratio_)
     

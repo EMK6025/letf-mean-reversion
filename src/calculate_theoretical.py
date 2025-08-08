@@ -5,6 +5,7 @@ import numpy as np
 import random
 from sql_functions import update_sql_table
 
+# annual fees for SSO, UPRO, and then hypothetical 4x LETF
 FEE = [0, 0, 0.89/100/252, 0.91/100/252, 0.93/100/252]
 
 def theoretical_change(df, X):

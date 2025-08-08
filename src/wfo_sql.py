@@ -158,7 +158,7 @@ CREATE TABLE wfo_run (
 
 CREATE TABLE wfo_period_summary (
     period_id         SERIAL    PRIMARY KEY,
-     run_id           INT       NOT NULL  REFERENCES wfo_run(run_id),
+    run_id            INT       NOT NULL  REFERENCES wfo_run(run_id),
     period_index      INT       NOT NULL,
     in_sample_start   DATE      NOT NULL,
     in_sample_end     DATE      NOT NULL,

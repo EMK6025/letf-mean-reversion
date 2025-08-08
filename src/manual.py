@@ -50,6 +50,78 @@ def wfo():
     except Exception as e:
         print("fail 2")
         traceback.print_exc()
+        
+    try:
+        walk_forward_optimization(
+            start_date=start_date,
+            end_date=end_date,  
+            in_sample_months=60,
+            out_sample_months=6,
+            max_time_minutes=1000,
+            stall_generations=10,
+            max_generations=1000,
+            pop_size=1000,
+            n_ensemble=10,
+            leverage=3,
+            fitness_config=custom_config
+        )
+    except Exception as e:
+        print("fail 3")
+        traceback.print_exc()
+            
+    try:
+        walk_forward_optimization(
+            start_date=start_date,
+            end_date=end_date,  
+            in_sample_months=60,
+            out_sample_months=6,
+            max_time_minutes=1000,
+            stall_generations=10,
+            max_generations=1000,
+            pop_size=1000,
+            n_ensemble=50,
+            leverage=3,
+            fitness_config=custom_config
+        )
+    except Exception as e:
+        print("fail 4")
+        traceback.print_exc()
+    
+    try:
+        walk_forward_optimization(
+            start_date=start_date,
+            end_date=end_date,  
+            in_sample_months=60,
+            out_sample_months=6,
+            max_time_minutes=1000,
+            stall_generations=10,
+            max_generations=1000,
+            pop_size=1000,
+            n_ensemble=10,
+            leverage=4,
+            fitness_config=custom_config
+        )
+    except Exception as e:
+        print("fail 5")
+        traceback.print_exc()
+            
+    try:
+        walk_forward_optimization(
+            start_date=start_date,
+            end_date=end_date,  
+            in_sample_months=60,
+            out_sample_months=6,
+            max_time_minutes=1000,
+            stall_generations=10,
+            max_generations=1000,
+            pop_size=1000,
+            n_ensemble=50,
+            leverage=4,
+            fitness_config=custom_config
+        )
+    except Exception as e:
+        print("fail 6")
+        traceback.print_exc()
 
 def PCA(run_index):
     from backtest_analysis import analyze_PCA
@@ -60,57 +132,8 @@ def run(run_id):
     analyze_wfo(run_id)
 
 def fit():
-    import numpy as np
-    import pandas as pd
-    from engine import create_engine, connect
-    import matplotlib.pyplot as plt
-    engine = create_engine()
-    run_ids = pd.read_sql(f"SELECT * FROM wfo_run ORDER BY run_id ASC;", engine)
-    all_periods = pd.read_sql(f"SELECT * from wfo_period_summary ORDER BY run_id ASC;", engine)
-    all_strategies = pd.read_sql(f"SELECT * from wfo_strategy;", engine)
-    gen_to_volume = []
-    
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    for row in run_ids.itertuples(index=False):
-        run     = row.run_id
-        metrics = row.fitness_config["selected_metrics"]
-        run_periods = all_periods[all_periods["run_id"] == run]
-        sorted_alpha = []
-        for period in run_periods['period_id']:
-            period_strategies = all_strategies[(all_strategies['run_id'] == run) & (all_strategies['period_id'] == period)]
-            fitness = period_strategies['fitness_values']
-            fitness = pd.DataFrame(fitness.tolist(), columns=metrics)
-            sorted_alpha.append(round(fitness['alpha'].mean(), 2))
-        generations = run_periods["generation_count"]
-        hypervolume = run_periods["final_hypervolume"]
-        ax.scatter(generations, hypervolume, sorted_alpha)
-        # grab alpha
-        gen_to_volume.extend(list(zip(generations, hypervolume, sorted_alpha)))
-
-    ax.set_title('Generations v.s. Hypervolume')        
-    ax.set_xlabel('Generations')
-    ax.set_ylabel('Hypervolume')
-    ax.set_zlabel('Alpha')
-    plt.show()
-    
-    from sklearn.decomposition import PCA
-
-    from sklearn import preprocessing
-    df = pd.DataFrame(gen_to_volume, columns=["Generations", "Hypervolume", "Alpha"])
-    scaled_df = preprocessing.scale(df) #if column samples, pass in df.T
-
-    pca = PCA()
-    pca.fit(scaled_df)
-    pca_data = pca.transform(scaled_df)
-    loading_scores = pd.Series(pca.components_[0], index=df.keys())
-    sorted_loading_scores = loading_scores.abs().sort_values(ascending=False)
-    top_X_features = sorted_loading_scores[0:8].index.values
-    print(loading_scores[top_X_features])
-
-    # print(pca.explained_variance_)        # the eigenvalues (variances explained by each PC)
-    print(pca.explained_variance_ratio_)
-    
+    from backtest_analysis import analyze_fit
+    analyze_fit()
     
 def list_runs():
     import pandas as pd
@@ -133,7 +156,7 @@ def clear_runs(to_remove: List):
     
 if __name__ == "__main__":
     
-    fit()
+    # fit()
     # import pandas as pd
     # from engine import create_engine
     # engine = create_engine()
@@ -157,8 +180,9 @@ if __name__ == "__main__":
     # import pandas as pd
     # from engine import create_engine
     # engine = create_engine()
-    # run = pd.read_sql(f"SELECT * FROM wfo_period_summary WHERE run_id = 1;", engine)
-    # print(run.iloc[2].to_string())
+    # periods = pd.read_sql(f"SELECT * FROM wfo_period_summary WHERE run_id = 2;", engine)
+    # for i in range(0, len(periods)):
+    #     print(f"{periods.iloc[i]['in_sample_end']} - {periods.iloc[i]['out_sample_end']}")
         
     # reset_wfo()
     # list_runs()
@@ -166,12 +190,9 @@ if __name__ == "__main__":
     # clear_run([1])
     # list_runs()
     
-    # wfo()
-        
-    # run(2)
-    # x = input("go next")
-    # analyze_run(7)
-    
+    # wfo()   
+    run(3)
+    run(4)
     # PCA(1)
     # x = input("go next?")
     # PCA(2)
