@@ -174,6 +174,9 @@ def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, le
         size       = size_changes,
         init_cash  = initial_capital,
         size_type  = 'targetpercent',
-        freq       = '1D'
+        freq       = '1D',
+        fees = 1 / 1e4,
+        slippage = 2 / 1e4
+
     )
     return pf

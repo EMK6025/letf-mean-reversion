@@ -43,7 +43,10 @@ def rebuild_performance(run_id):
     run_period = 1
     
     while True:
-        current_period = periods[periods['period_index'] == run_period].iloc[0]
+        current_period = periods[periods['period_index'] == run_period]
+        if len(current_period) == 0:
+            break
+        current_period = current_period.iloc[0]
         period_id = current_period['period_id']
         
         period_start_date = current_period['in_sample_end'] + pd.DateOffset(days=1)
@@ -84,10 +87,10 @@ def rebuild_performance(run_id):
         else:
             cumulative_values = combined_performance.copy()
    
-        print(f"Period {run_period}: Start Date {period_start_date}")
-        print(f"                 End Date {period_end_date}")
-        print(f"           Starting value {current_portfolio_value}")
-        print(f"             Ending value {combined_performance.iloc[-1]}")
+        # print(f"Period {run_period}: Start Date {period_start_date}")
+        # print(f"                 End Date {period_end_date}")
+        # print(f"           Starting value {current_portfolio_value}")
+        # print(f"             Ending value {combined_performance.iloc[-1]}")
         
         current_portfolio_value = combined_performance.iloc[-1]
         period_start_date = period_end_date + pd.DateOffset(days=1)
@@ -129,13 +132,15 @@ def analyze_wfo(run_id):
     annual_return = pfs.annualized_return()
     
     print("=== Performance Metrics ===")
-    print(f"Annualized Return       : {annual_return:.2%}")
-    print(f"Alpha                   : {alpha:.2%}")
-    print(f"Sharpe Ratio            : {sharpe:.2f}")
-    print(f"Sortino Ratio           : {sortino:.2f}")
-    print(f"Max Drawdown            : {drawdown:.2%}")
+    print(f"Annualized Return               : {annual_return:.2%}")
+    print(f"Alpha                           : {alpha:.2%}")
+    print(f"Sharpe Ratio                    : {sharpe:.2f}")
+    print(f"Sortino Ratio                   : {sortino:.2f}")
+    print(f"Max Drawdown                    : {drawdown:.2%}")
     print(f"Relative Drawdown (vs benchmark): {rel_drawdown:.2f}×")
-    print(f"Benchmark Annualized Return: {benchmark_returns:.2%}")
+    print(f"Benchmark Annualized Return     : {benchmark_returns:.2%}")
+    print(f"Benchmark Sharpe Ratio          : {benchmark.returns().vbt.returns.sharpe_ratio():.2f}")
+    print(f"Benchmark Sortino Ratio          : {benchmark.returns().vbt.returns.sortino_ratio():.2f}")
     
     fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -269,4 +274,164 @@ def analyze_fit():
 
     # print(pca.explained_variance_)        # the eigenvalues (variances explained by each PC)
     print(pca.explained_variance_ratio_)
+
+def capm_alpha_beta(strategy_prices: pd.Series,
+                        bench_prices: pd.Series,
+                        rf: pd.Series,
+                        periods_per_year: int = 252,
+                        nw_lags: int = 5):
+    
+    import vectorbt as vbt
+    import numpy as np
+    import pandas as pd
+    import statsmodels.api as sm
+
+    # simple returns
+    s = strategy_prices.pct_change()
+    b = bench_prices.pct_change()
+    
+    df = pd.concat({'s': s, 'b': b}, axis=1)
+
+    rf_series = rf.copy()
+    rf_series = rf_series.reindex(df.index).ffill()
+
+
+    s, b = s.align(b, 'inner')
+    mask = s.notna() & b.notna()
+    s, b = s[mask], b[mask]
+
+    rf = rf / 100.0
+    
+    # per-day risk-free
+    s_ex = s - rf.iloc[1:]
+    b_ex = b - rf.iloc[1:]
+
+    # OLS: s_ex = alpha + beta * b_ex + eps
+    X = sm.add_constant(b_ex.values)  # const -> alpha
+    y = s_ex.values
+    ols = sm.OLS(y, X).fit(cov_type='HAC', cov_kwds={'maxlags': nw_lags})
+
+    alpha_period = ols.params[0]
+    beta = ols.params[1]
+    alpha_ann = alpha_period * periods_per_year
+        
+    return {
+        'alpha_ann': alpha_ann,
+        'beta': beta
+    }
+
+def analyze_alpha_all():
+    import pandas as pd
+    from engine import create_engine
+    engine = create_engine()
+    run = pd.read_sql(f"SELECT run_id FROM wfo_run ORDER BY run_id ASC;", engine)
+
+        
+    for run_id in run['run_id']:
+        cumulative_values, backtest_start_date, leverage = rebuild_performance(run_id)
+        engine = create_engine()
+        df = connect_time_series(engine, "test_data")
+        spx = df["SPX Close"][backtest_start_date:]
+        rf = df["RF Rate"][backtest_start_date:]
+        
+        # cumulative_values = cumulative_values.pct_change()
+        # benchmark = spx.pct_change()
+
+        # beta = cumulative_values.cov(benchmark)/benchmark.var()
+        # alpha = cumulative_values.mean() - (beta * (benchmark.mean()))
+        res = capm_alpha_beta(cumulative_values, spx, rf, periods_per_year=252)
+        print(f"run {run_id}: beta={res['beta']:.2f}, alpha_ann={res['alpha_ann']:.2%}")
+
+def analyze_alpha(run_id):
+    import pandas as pd
+    from backtest import run, Params
+    
+    engine = create_engine()
+    df = connect_time_series(engine, "test_data")
+    runs = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
+    periods = pd.read_sql(f"SELECT * FROM wfo_period_summary WHERE run_id = {run_id}", engine)
+    
+    strategies = connect(engine, "wfo_strategy")
+    strategies = (
+        strategies
+        [strategies['run_id'] == run_id]
+        .sort_values(by='period_id')
+        .reset_index(drop=True)
+    )    
+    
+    # print(f"length of strategies: {len(strategies)}")
+    start_date = pd.to_datetime(runs['start_date'].iloc[0])
+    end_date = pd.to_datetime(runs['end_date'].iloc[0])
+    in_sample_months = runs['in_sample_months'].iloc[0]
+    leverage = runs['leverage'].iloc[0]
+        
+    # take start date, then offset by first in-sample period plus 1 day
+    backtest_start_date = start_date + pd.DateOffset(months=in_sample_months) + pd.DateOffset(days=1)
+    
+    # for col in ['pos_sizing', 'fitness_values']:
+    #     strategies[col] = strategies[col].apply(lambda x: [round(v, 2) for v in x])
+
+    df = connect_time_series(engine, "test_data")
+    spx_after_date = df["SPX Close"][backtest_start_date:].iloc[0]
+
+    current_portfolio_value = spx_after_date
+    
+    cumulative_values = pd.DataFrame()
+       
+    run_period = 1
+    results = []
+    while True:
+        current_period = periods[periods['period_index'] == run_period]
+        if len(current_period) == 0:
+            break
+        current_period = current_period.iloc[0]
+        period_id = current_period['period_id']
+        
+        period_start_date = current_period['in_sample_end'] + pd.DateOffset(days=1)
+        period_end_date = pd.Timestamp(current_period['out_sample_end'])
+        if period_end_date > end_date:
+            period_end_date = end_date
+            
+        period_strategies = strategies[strategies['period_id'] == period_id]
+        if len(period_strategies) == 0:
+            break        
+        
+        period_ensemble_params = []
+        for i in range(0,len(period_strategies)):
+            period_ensemble_params.append(Params(
+                window=int(period_strategies["window"].iloc[i]),
+                entry=int(period_strategies["entry"].iloc[i]),
+                exit=int(period_strategies["exit"].iloc[i]),
+                sell_threshold=int(period_strategies["sell_threshold"].iloc[i]),
+                position_sizing=np.array([float(x) for x in period_strategies["pos_sizing"].iloc[i]])
+            ))
+        
+        initial_capital_per_strategy = current_portfolio_value/len(period_ensemble_params)
+        
+        pfs = run(period_ensemble_params, period_start_date, 
+                  period_end_date, period_end_date, 
+                  initial_capital_per_strategy, leverage)
+        
+        combined_performance = pfs.value().sum(axis=1)
+        spx = df["SPX Close"][period_start_date:period_end_date]
+        rf = df["RF Rate"][period_start_date:period_end_date]
+        
+        # print(f" date range of combined_performance is {combined_performance.index[0]} to {combined_performance.index[-1]}")
+        # print(f" date range of spx is {spx.index[0]} to {spx.index[-1]}")
+        # print(f" date range of rf is {rf.index[0]} to {rf.index[-1]}")
+        res = capm_alpha_beta(combined_performance, spx, rf, periods_per_year=252)
+        results.append(res)        
+        
+        run_period += 1
+    positive_count = 0
+    negative_count = 0
+    worst = 999
+    for res in results:
+        if res['alpha_ann'] > 0:
+            positive_count += 1 
+        else:
+            negative_count += 1 
+            worst = min(worst, res['alpha_ann'])
+    print(f"a total of {negative_count} periods were negative, with the worst being {worst}")
+    # print(f"period {run_period}: beta={res['beta']:.2f}, alpha_ann={res['alpha_ann']:.2%}")
     

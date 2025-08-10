@@ -14,7 +14,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 settings.array_wrapper['freq'] = '1D'
 
-seed = 69
+seed = 4812
 random.seed(seed)
 np.random.seed(seed)
 
