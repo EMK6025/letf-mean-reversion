@@ -3,7 +3,6 @@ import numpy as np
 import time
 from vectorbt import settings
 import warnings
-import random
 
 from backtest import run, Params
 from fitness import calc_metrics
@@ -14,7 +13,8 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 settings.array_wrapper['freq'] = '1D'
 
-seed = 765
+import random
+seed = 69
 random.seed(seed)
 np.random.seed(seed)
 
@@ -137,29 +137,25 @@ def select_diverse_strategies(pareto_front, n_strategies=10):
     # fitness_matrix = np.vstack([ind.fitness.values for ind in pareto_front])
     # strategy_params_scaled = StandardScaler().fit_transform(fitness_matrix)
 
+    """
+    select one strategy from n random clusters
+    """
     # use K-means clustering to find diverse strategies
     kmeans = KMeans(n_clusters=n_strategies, random_state=seed, n_init=10)
-    cluster_labels = kmeans.fit_predict(strategy_params_scaled)
+    labels = kmeans.fit_predict(strategy_params_scaled)
     
-    # select one strategy from each cluster (closest to cluster center)
     diverse_strategies = []
-    for cluster_id in range(n_strategies):
-        cluster_mask = cluster_labels == cluster_id
-        if not np.any(cluster_mask):
+        
+    diverse_strategies = []
+    for cluster_id in np.unique(labels):
+        cluster_idx = np.where(labels == cluster_id)[0]
+        
+        if cluster_idx.size == 0:
             continue
-            
-        cluster_strategies = strategy_params_scaled[cluster_mask]
+        cluster_strategies = strategy_params_scaled[cluster_idx]
         cluster_center = kmeans.cluster_centers_[cluster_id]
-        
-        # find the strategy closest to the cluster center
-        distances = np.linalg.norm(cluster_strategies - cluster_center, axis=1)
-        closest_idx = np.argmin(distances)
-        
-        # get the original strategy index
-        cluster_indices = np.where(cluster_mask)[0]
-        original_idx = cluster_indices[closest_idx]
-        
-        diverse_strategies.append(pareto_front[original_idx])
+        j = np.argmin(np.linalg.norm(cluster_strategies - cluster_center, axis=1))
+        diverse_strategies.append(pareto_front[cluster_idx[j]])
     
     # print(f"Selected {len(diverse_strategies)} diverse strategies from {len(pareto_front)} Pareto front strategies")
     
@@ -216,32 +212,29 @@ def run_ensemble_backtest(cleaned_pareto_front, start_date, target_backtest_dura
 
     benchmark = Portfolio.from_holding(close=spxt[start_date_str:end_date_str], freq='1D')
 
-    # # recast to relevant send_date slice    
-    # sliced_pfs = Portfolio.from_holding(
-    #     close = pfs.value().loc[:end_date],
-    #     size  = 1,
-    #     freq  = pfs.wrapper.freq
-    # )
+    # recast to relevant send_date slice    
+    sliced_pfs = Portfolio.from_holding(
+        close = pfs.value().loc[:end_date_str],
+        size  = 1,
+        freq  = pfs.wrapper.freq
+    )
     
-    # # find out-of-sample fitness for ensemble strategies
-    # all_metrics = calc_metrics(sliced_pfs, benchmark, ensemble_params)
+    # find out-of-sample fitness for ensemble strategies
+    all_metrics = calc_metrics(sliced_pfs, benchmark, ensemble_params)
     
-    # # rewrite fitness with out-of-sample values    
-    # for i, individual in enumerate(ensemble_strategies):
-    #     new_fitness_values = []
-    #     for metric in all_metrics:
-    #         if metric in fitness_config.selected_metrics:
-    #             metric_values = all_metrics[metric]
-    #             value = metric_values.iloc[i]
-    #             if not isfinite(value):
-    #                 value = 0.0
-    #             new_fitness_values.append(float(value))
-    #     individual.fitness.values = tuple(new_fitness_values)
+    # rewrite fitness with out-of-sample values    
+    for i, individual in enumerate(ensemble_strategies):
+        new_fitness_values = []
+        for metric in all_metrics:
+            if metric in fitness_config.selected_metrics:
+                metric_values = all_metrics[metric]
+                value = metric_values.iloc[i]
+                if not isfinite(value):
+                    value = 0.0
+                new_fitness_values.append(float(value))
+        individual.fitness.values = tuple(new_fitness_values)
 
-    # # Calculate ensemble performance
-    # combined_performance = sliced_pfs.value().sum(axis=1)
-    # # combined_performance = combined_performance * capital_per_strategy / sliced_pfs.value().iloc[0].iloc[0]
-    combined_performance = pfs[:end_date].value().sum(axis=1)
+    combined_performance = pfs.value().sum(axis=1).loc[:end_date_str]
     
     combined_pf = Portfolio.from_holding(
         close = combined_performance,
@@ -257,8 +250,8 @@ def run_ensemble_backtest(cleaned_pareto_front, start_date, target_backtest_dura
     print(f"\nEnsemble out-of-sample performance:")
     print(f"   Starting Value: ${combined_performance.iloc[0]:.2f}")
     print(f"   Final Value: ${portfolio_value:.2f}")
-    print(f"   Starting Benchmark Value: ${spxt[start_date_str].iloc[0]:.2f}")
-    print(f"   Final Benchmark Value: ${spxt[end_date_str].iloc[0]:.2f}")
+    print(f"   Starting Benchmark Value: ${spxt[start_date_str]:.2f}")
+    print(f"   Final Benchmark Value: ${spxt[end_date_str]:.2f}")
     print(f"   Period Return: {period_return:.2%}")
     print(f"   Benchmark Return: {benchmark.total_return():.2%}")
     print(f"   Max Drawdown: {combined_metrics['drawdown']:.2%}")
