@@ -17,7 +17,7 @@ class FitnessConfig:
         'sortino': (1.0, False, 0.0),          # Higher is better
         'sharpe': (1.0, False, 0.0),           # Higher is better  
         'rel_drawdown': (-1.0, True, 1.0),      # Lower is better
-        'alpha': (1.0, False, 0.0),             # Higher is better
+        'alpha': (1.0, False, 0.0),             # Higher is better (raw alpha)
         'activeness': (1.0, False, 3.0),         # Higher is better
         'drawdown': (1.0, False, -1.0),          # Higher is better
         'annual_return': (1.0, False, 0.0),     # Higher is better

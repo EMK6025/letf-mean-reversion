@@ -14,7 +14,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 settings.array_wrapper['freq'] = '1D'
 
-seed = 4812
+seed = 765
 random.seed(seed)
 np.random.seed(seed)
 
@@ -35,10 +35,10 @@ def window_backtest(ref_points, start_date, end_date, max_time_minutes=10, stall
     generation = 0
     best_hypervolume = 0
     
-    print("Generating initial population...")
+    # print("Generating initial population...")
     population = create_initial_population(pop_size=pop_size, start_date=start_date, end_date=end_date, leverage=leverage)
 
-    print("Calculating initial Pareto front...")
+    # print("Calculating initial Pareto front...")
     pareto_front = tools.sortNondominated(population, len(population), first_front_only=True)[0]
                 
     def calculate_hypervolume(front, ref_points):
@@ -65,7 +65,7 @@ def window_backtest(ref_points, start_date, end_date, max_time_minutes=10, stall
         total_volume = volumes[valid_mask].sum()
         return total_volume
     
-    print("Calculating initial hypervolume...")
+    # print("Calculating initial hypervolume...")
     current_hypervolume = calculate_hypervolume(pareto_front, ref_points)
     best_hypervolume = current_hypervolume
     hypervolume_history.append(current_hypervolume)
@@ -107,9 +107,9 @@ def window_backtest(ref_points, start_date, end_date, max_time_minutes=10, stall
             break
     
     total_time = time.time() - start_time
-    print(f"\nTotal optimization time: {total_time/60:.2f} minutes")
-    print(f"Final generation: {generation}")
-    print(f"Final Pareto front size: {len(pareto_front)}")
+    # print(f"\nTotal optimization time: {total_time/60:.2f} minutes")
+    # print(f"Final generation: {generation}")
+    # print(f"Final Pareto front size: {len(pareto_front)}")
     
     return pareto_front, generation, best_hypervolume
 
@@ -117,7 +117,7 @@ def select_diverse_strategies(pareto_front, n_strategies=10):
     from sklearn.preprocessing import StandardScaler
     from sklearn.cluster import KMeans  
     if len(pareto_front) <= n_strategies:
-        print(f"Pareto front has only {len(pareto_front)} strategies, using all of them")
+        # print(f"Pareto front has only {len(pareto_front)} strategies, using all of them")
         return pareto_front
     
     # extract strategy parameters for clustering (only RSI window, entry, exit, sell threshold)
@@ -161,7 +161,7 @@ def select_diverse_strategies(pareto_front, n_strategies=10):
         
         diverse_strategies.append(pareto_front[original_idx])
     
-    print(f"Selected {len(diverse_strategies)} diverse strategies from {len(pareto_front)} Pareto front strategies")
+    # print(f"Selected {len(diverse_strategies)} diverse strategies from {len(pareto_front)} Pareto front strategies")
     
     return diverse_strategies
 
@@ -186,12 +186,11 @@ def run_ensemble_backtest(cleaned_pareto_front, start_date, target_backtest_dura
         ensemble_count = n_strategies
     
     # set initial capital per strategy
-    capital_per_strategy = current_portfolio_value / ensemble_count
-    print(f"   Total available capital: ${current_portfolio_value:.2f}")
-    print(f"   Capital per strategy: ${capital_per_strategy:.2f}")
+    # print(f"   Total available capital: ${current_portfolio_value:.2f}")
+    # print(f"   Capital per strategy: ${capital_per_strategy:.2f}")
         
     # run ensemble backtest on out-of-sample period
-    print(f"Running ensemble backtest with {len(ensemble_strategies)} strategies...")
+    # print(f"Running ensemble backtest with {len(ensemble_strategies)} strategies...")
 
     ensemble_params = []
     for individual in ensemble_strategies:
@@ -204,6 +203,8 @@ def run_ensemble_backtest(cleaned_pareto_front, start_date, target_backtest_dura
             position_sizing=np.array(pos_sizing)
         ))
 
+    capital_per_strategy = current_portfolio_value / ensemble_count
+
     pfs = run(ensemble_params, start_date_str, tentative_end_date_str, target_end_date, capital_per_strategy, leverage=leverage)
 
     records = pfs.trades.records_readable.copy()
@@ -215,49 +216,49 @@ def run_ensemble_backtest(cleaned_pareto_front, start_date, target_backtest_dura
 
     benchmark = Portfolio.from_holding(close=spxt[start_date_str:end_date_str], freq='1D')
 
-    # recast to relevant send_date slice    
-    sliced_pfs = Portfolio.from_holding(
-        close = pfs.value().loc[:end_date],
+    # # recast to relevant send_date slice    
+    # sliced_pfs = Portfolio.from_holding(
+    #     close = pfs.value().loc[:end_date],
+    #     size  = 1,
+    #     freq  = pfs.wrapper.freq
+    # )
+    
+    # # find out-of-sample fitness for ensemble strategies
+    # all_metrics = calc_metrics(sliced_pfs, benchmark, ensemble_params)
+    
+    # # rewrite fitness with out-of-sample values    
+    # for i, individual in enumerate(ensemble_strategies):
+    #     new_fitness_values = []
+    #     for metric in all_metrics:
+    #         if metric in fitness_config.selected_metrics:
+    #             metric_values = all_metrics[metric]
+    #             value = metric_values.iloc[i]
+    #             if not isfinite(value):
+    #                 value = 0.0
+    #             new_fitness_values.append(float(value))
+    #     individual.fitness.values = tuple(new_fitness_values)
+
+    # # Calculate ensemble performance
+    # combined_performance = sliced_pfs.value().sum(axis=1)
+    # # combined_performance = combined_performance * capital_per_strategy / sliced_pfs.value().iloc[0].iloc[0]
+    combined_performance = pfs[:end_date].value().sum(axis=1)
+    
+    combined_pf = Portfolio.from_holding(
+        close = combined_performance,
         size  = 1,
         freq  = pfs.wrapper.freq
     )
     
-    # sliced_pfs = sliced_pfs * capital_per_strategy / sliced_pfs.value().iloc[0]
-    
-    all_metrics = calc_metrics(sliced_pfs, benchmark, ensemble_params)
-    
-    for i, individual in enumerate(ensemble_strategies):
-        new_fitness_values = []
-        for metric in all_metrics:
-            if metric in fitness_config.selected_metrics:
-                metric_values = all_metrics[metric]
-                value = metric_values.iloc[i]
-                if not isfinite(value):
-                    value = 0.0
-                new_fitness_values.append(float(value))
-        individual.fitness.values = tuple(new_fitness_values)
-    
-    # Calculate ensemble performance
-    combined_performance = sliced_pfs.value().sum(axis=1)
-    combined_performance = combined_performance * capital_per_strategy / sliced_pfs.value().iloc[0].iloc[0]
-
-    combined_pf = Portfolio.from_holding(
-        close = combined_performance,
-        size  = 1,
-        freq  = sliced_pfs.wrapper.freq
-    )
-    
-    combined = combined_performance
-    combined = combined.div(combined.iloc[0]).mul(current_portfolio_value)
-    
     portfolio_value = combined_performance.iloc[-1]
-    period_return   = (combined_performance.iloc[-1] / combined_performance.iloc[0]) - 1
+    period_return   = (portfolio_value / combined_performance.iloc[0]) - 1
     combined_metrics = calc_metrics(combined_pf, benchmark, ensemble_params)
     print(f"supposed starting value (current_portfolio_value) is ${current_portfolio_value}")
     print(f"\nActual out-of-sample range: {start_date_str} to {end_date_str}")
     print(f"\nEnsemble out-of-sample performance:")
     print(f"   Starting Value: ${combined_performance.iloc[0]:.2f}")
     print(f"   Final Value: ${portfolio_value:.2f}")
+    print(f"   Starting Benchmark Value: ${spxt[start_date_str].iloc[0]:.2f}")
+    print(f"   Final Benchmark Value: ${spxt[end_date_str].iloc[0]:.2f}")
     print(f"   Period Return: {period_return:.2%}")
     print(f"   Benchmark Return: {benchmark.total_return():.2%}")
     print(f"   Max Drawdown: {combined_metrics['drawdown']:.2%}")

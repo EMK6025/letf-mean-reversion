@@ -49,6 +49,3 @@ def main():
     plt.grid(True)
     plt.show()
     print(base.stats())
-
-
-    

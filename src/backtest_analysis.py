@@ -68,19 +68,13 @@ def rebuild_performance(run_id):
                 position_sizing=np.array([float(x) for x in period_strategies["pos_sizing"].iloc[i]])
             ))
         
-        initial_capital_per_strategy = current_portfolio_value/len(period_ensemble_params)
+        capital_per_strategy = current_portfolio_value/len(period_ensemble_params)
         
         pfs = run(period_ensemble_params, period_start_date, 
                   period_end_date, period_end_date, 
-                  initial_capital_per_strategy, leverage)
+                  capital_per_strategy, leverage)
         
         combined_performance = pfs.value().sum(axis=1)
-        
-        pfs = Portfolio.from_holding(
-            close = combined_performance.loc[:end_date],
-            size  = 1,
-            freq  = pfs.wrapper.freq
-        )
                 
         if not cumulative_values.empty:
             cumulative_values = pd.concat([cumulative_values, combined_performance], axis=0)
@@ -88,9 +82,10 @@ def rebuild_performance(run_id):
             cumulative_values = combined_performance.copy()
    
         # print(f"Period {run_period}: Start Date {period_start_date}")
-        # print(f"                 End Date {period_end_date}")
-        # print(f"           Starting value {current_portfolio_value}")
-        # print(f"             Ending value {combined_performance.iloc[-1]}")
+        # print(f"                End Date: {period_end_date}")
+        # print(f"                Starting value: {current_portfolio_value}")
+        # print(f"                Ending value: {combined_performance.iloc[-1]}")
+        # print(f"                Period Return: {(combined_performance.iloc[-1] / combined_performance.iloc[0]) - 1}")
         
         current_portfolio_value = combined_performance.iloc[-1]
         period_start_date = period_end_date + pd.DateOffset(days=1)
@@ -130,6 +125,9 @@ def analyze_wfo(run_id):
     drawdown = pfs.max_drawdown()
     alpha = (pfs.annualized_return() - benchmark.annualized_return())
     annual_return = pfs.annualized_return()
+    
+    run = pd.read_sql(f"SELECT * FROM wfo_run where run_id = {run_id} LIMIT 1;", engine)
+    print(run)
     
     print("=== Performance Metrics ===")
     print(f"Annualized Return               : {annual_return:.2%}")
