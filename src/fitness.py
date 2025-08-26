@@ -4,6 +4,7 @@ import warnings
 from pandas import Series
 from dataclasses import dataclass
 from typing import List, Dict
+import pandas as pd
 
 warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
 vbt.settings.array_wrapper['freq'] = '1D'
@@ -14,16 +15,17 @@ class FitnessConfig:
     
     # metric_name: (weight, minimize boolean, reference point)
     available_metrics = {
-        'sortino': (1.0, False, 0.0),          # Higher is better
-        'sharpe': (1.0, False, 0.0),           # Higher is better  
+        'sortino': (1.0, False, 0.0),           # Higher is better
+        'sharpe': (1.0, False, 0.0),            # Higher is better  
         'rel_drawdown': (-1.0, True, 1.0),      # Lower is better
         'alpha': (1.0, False, 0.0),             # Higher is better (raw alpha)
-        'activeness': (1.0, False, 3.0),         # Higher is better
-        'drawdown': (1.0, False, -1.0),          # Higher is better
+        'activeness': (1.0, False, 3.0),        # Higher is better
+        'drawdown': (1.0, False, -1.0),         # Higher is better
         'annual_return': (1.0, False, 0.0),     # Higher is better
-        'pain_ratio': (1.0, False, 0.0),       # Higher is better
-        'var': (-1.0, True, .5),               # Lower is better
-        'information_ratio': (1.0, False, 0.0) # Higher is better
+        'pain_ratio': (1.0, False, 0.0),        # Higher is better
+        'var': (-1.0, True, .5),                # Lower is better
+        'information_ratio': (1.0, False, 0.0), # Higher is better
+        'beta': (-1.0, True, 1.5)               # Lower is better
     }    
     
     selected_metrics: List[str] = None
@@ -62,45 +64,62 @@ class FitnessConfig:
     def get_num_objectives(self) -> int:
         return len(self.selected_metrics)
 
-def calc_metrics(pfs, benchmark, params):
+def calc_metrics(pfs: vbt.Portfolio, benchmark: vbt.Portfolio, rf: pd.Series, params: List):
     """
     calculate all available metrics
-    input: backtested performances, benchmark performance, and the input params for the backtest
-    output: metrics dic 
+    input: backtested performances, benchmark performance, risk-free rate, and the input params for the backtest
+    output: metrics dict
     """
     returns = pfs.returns()
     benchmark_returns = benchmark.returns()
-    common_idx = returns.index.intersection(benchmark_returns.index)
-    aligned_bench  = benchmark_returns.loc[common_idx] 
+    
+    index = returns.index.intersection(benchmark_returns.index).intersection(rf.index) 
+    returns = returns.loc[index]
+    benchmark_returns = benchmark_returns.loc[index]
+    rf  = rf.loc[index] / 100.0
+    
+    returns = returns.sub(rf, axis=0)
+    benchmark_returns = benchmark_returns.sub(rf, axis=0)
+    
     sortino = returns.vbt.returns.sortino_ratio()
     sharpe = returns.vbt.returns.sharpe_ratio()
+    var_95 = returns.vbt.returns.value_at_risk(cutoff=0.05)
+    information_ratio = returns.vbt.returns.information_ratio(benchmark_rets=benchmark_returns)
+
     rel_drawdown = pfs.max_drawdown() / benchmark.max_drawdown()
     drawdown = pfs.max_drawdown()
-    alpha = pfs.annualized_return() - benchmark.annualized_return()
+    dd = pfs.value().vbt.drawdown().abs()
+    ulcer = np.sqrt(dd.pow(2).mean(axis=0))
+    
+    raw_alpha = pfs.annualized_return() - benchmark.annualized_return()
+    
     annual_return = pfs.annualized_return()
+    pain_ratio = annual_return / ulcer
+
     activeness = [np.sum(p.position_sizing) for p in params]
     if hasattr(sortino, 'index') and len(activeness) == len(sortino):
         activeness = Series(activeness, index=sortino.index)
     else:
         activeness = float(np.mean(activeness))
-    dd = pfs.value().vbt.drawdown().abs()
-    ulcer = np.sqrt(dd.pow(2).mean(axis=0))
-    pain_ratio = annual_return / ulcer
-    var_95 = returns.vbt.returns.value_at_risk(cutoff=0.05)
-    information_ratio = returns.vbt.returns.information_ratio(benchmark_rets=aligned_bench)
-
+    
+    if isinstance(returns, pd.Series):
+        beta = returns.cov(benchmark_returns) / benchmark_returns.var()
+    else:
+        beta = returns.apply(lambda x: x.cov(benchmark_returns) / benchmark_returns.var(), axis=0)
+        
     # Return dictionary of all metrics
     metrics = {
-        'sortino': np.round(sortino, 4),
-        'sharpe': np.round(sharpe, 4),
-        'rel_drawdown': np.round(rel_drawdown, 4),
-        'drawdown': np.round(drawdown, 4),
-        'alpha': np.round(alpha, 4),
-        'annual_return': np.round(annual_return, 4),
-        'activeness': np.round(activeness, 4),
-        'pain_ratio': np.round(pain_ratio, 4),
-        'var': np.round(var_95, 4),
-        'information_ratio': np.round(information_ratio, 4)
+        'sortino': sortino.round(4),
+        'sharpe': sharpe.round(4),
+        'rel_drawdown': rel_drawdown.round(4),
+        'drawdown': drawdown.round(4),
+        'alpha': raw_alpha.round(4),
+        'annual_return': annual_return.round(4),
+        'activeness': activeness.round(4) if isinstance(activeness, pd.Series) else np.round(activeness, 4),
+        'pain_ratio': pain_ratio.round(4),
+        'var': var_95.round(4),
+        'information_ratio': information_ratio.round(4),
+        'beta': beta.round(4) if hasattr(beta, 'round') else np.round(float(beta), 4),
     }
     return metrics
 

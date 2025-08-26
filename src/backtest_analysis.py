@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from vectorbt import Portfolio
-from datetime import date
 from engine import create_engine, connect, connect_time_series
 from vectorbt import settings
 settings.array_wrapper['freq'] = '1D'
@@ -100,17 +99,26 @@ def analyze_wfo(run_id):
     """
     Analyze walk-forward optimization results with ensemble strategies.
     """
-    cumulative_values, backtest_start_date, leverage = rebuild_performance(run_id)
+    pd.set_option("display.max_columns", None)
+    pd.set_option("display.max_rows", None) 
+    pd.set_option("display.width", None)   
+    pd.set_option("display.max_colwidth", None) 
+    
+    cumulative_values, backtest_start_date, _ = rebuild_performance(run_id)
     engine = create_engine()
     df = connect_time_series(engine, "test_data")
     spx = df["SPX Close"][backtest_start_date:]
 
+    overlap = spx.index.intersection(cumulative_values.index)
+    spx = spx.loc[overlap]
+    cumulative_values = cumulative_values.loc[overlap]
+    
     pfs = Portfolio.from_holding(
         close=cumulative_values,
         size = 1,
         freq='1D'
     )
-    
+        
     benchmark = Portfolio.from_holding(
         close=spx, 
         size=1, 
@@ -121,12 +129,16 @@ def analyze_wfo(run_id):
     benchmark_returns = benchmark.annualized_return()
     sortino = returns.vbt.returns.sortino_ratio()
     sharpe = returns.vbt.returns.sharpe_ratio()
+    
+    rolling_vol = benchmark.returns().vbt.returns.qs.rolling_volatility(window=30)
+    print(rolling_vol)
     rel_drawdown = (pfs.max_drawdown() / benchmark.max_drawdown())
     drawdown = pfs.max_drawdown()
     alpha = (pfs.annualized_return() - benchmark.annualized_return())
     annual_return = pfs.annualized_return()
     
     run = pd.read_sql(f"SELECT * FROM wfo_run where run_id = {run_id} LIMIT 1;", engine)
+
     print(run)
     
     print("=== Performance Metrics ===")
@@ -139,24 +151,49 @@ def analyze_wfo(run_id):
     print(f"Benchmark Annualized Return     : {benchmark_returns:.2%}")
     print(f"Benchmark Sharpe Ratio          : {benchmark.returns().vbt.returns.sharpe_ratio():.2f}")
     print(f"Benchmark Sortino Ratio          : {benchmark.returns().vbt.returns.sortino_ratio():.2f}")
-    
-    fig, ax = plt.subplots(figsize=(12, 6))
+        
+        # --- compute rolling volatility (annualized) ---
+    roll_window = 30
+    ret_strat = pfs.returns()              # Series/DataFrame of strategy returns
+    ret_bench = benchmark.returns()        # Series/DataFrame of benchmark returns
 
-    ax.plot(spx.index, spx.values, 
-            label='SPX', color='red', linewidth=2, alpha=0.7)
-    ax.plot(cumulative_values.index, cumulative_values.values, 
-            label='WFO Ensemble Strategy', color='green', linewidth=2)
-    
+    # via QSAdapter
+    vol_strat = ret_strat.vbt.returns.qs.rolling_volatility(window=roll_window)
+    vol_bench = ret_bench.vbt.returns.qs.rolling_volatility(window=roll_window)
+
+    # align indices for plotting (optional but tidy)
+    vol = pd.concat(
+        {"Strategy": vol_strat, "Benchmark": vol_bench},
+        axis=1
+    ).dropna()
+
+    # --- plots ---
+    fig, (ax, ax2) = plt.subplots(
+        2, 1, figsize=(12, 8), sharex=True,
+        gridspec_kw={"height_ratios": [2, 1]}
+    )
+
+    # Top: price/equity curves
+    ax.plot(spx.index, spx.values, label='SPX', linewidth=2, alpha=0.7)
+    ax.plot(cumulative_values.index, cumulative_values.values, label='WFO Ensemble Strategy', linewidth=2)
     ax.set_title('Walk-Forward Optimization Ensemble Performance (Continuous Out-of-Sample)', fontsize=14)
     ax.set_ylabel('Portfolio Value')
-    ax.set_xlabel('Date')
     ax.grid(True, alpha=0.3)
     ax.legend()
     ax.set_yscale('log')
-    
+
+    # Bottom: rolling vol
+    ax2.plot(vol.index, vol['Benchmark'], label=f'Benchmark {roll_window}-day Rolling Vol', linewidth=1.8, alpha=0.9)
+    ax2.plot(vol.index, vol['Strategy'],  label=f'Strategy {roll_window}-day Rolling Vol',  linewidth=1.8, alpha=0.9)
+    ax2.set_ylabel('Annualized Volatility')
+    ax2.set_xlabel('Date')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend(loc='upper left')
+
     plt.tight_layout()
-    plt.savefig("wfo_analysis.png", dpi=300)  # Save the figure with high resolution
+    plt.savefig("wfo_analysis.png", dpi=300)
     plt.show()
+
 
 def analyze_PCA(run_id):
     from sklearn.decomposition import PCA
@@ -279,12 +316,17 @@ def capm_alpha_beta(strategy_prices: pd.Series,
                         periods_per_year: int = 252,
                         nw_lags: int = 5):
     
-    import vectorbt as vbt
-    import numpy as np
     import pandas as pd
     import statsmodels.api as sm
 
     # simple returns
+    
+    overlap = bench_prices.index.intersection(strategy_prices.index).intersection(rf.index)
+    
+    bench_prices = bench_prices.loc[overlap]
+    strategy_prices = strategy_prices.loc[overlap]
+    rf = rf.loc[overlap]
+    
     s = strategy_prices.pct_change()
     b = bench_prices.pct_change()
     
@@ -297,14 +339,14 @@ def capm_alpha_beta(strategy_prices: pd.Series,
     s, b = s.align(b, 'inner')
     mask = s.notna() & b.notna()
     s, b = s[mask], b[mask]
-
+    
+    # percentage to decimal
     rf = rf / 100.0
     
     # per-day risk-free
     s_ex = s - rf.iloc[1:]
     b_ex = b - rf.iloc[1:]
 
-    # OLS: s_ex = alpha + beta * b_ex + eps
     X = sm.add_constant(b_ex.values)  # const -> alpha
     y = s_ex.values
     ols = sm.OLS(y, X).fit(cov_type='HAC', cov_kwds={'maxlags': nw_lags})
@@ -326,11 +368,11 @@ def analyze_alpha_all():
 
         
     for run_id in run['run_id']:
-        cumulative_values, backtest_start_date, leverage = rebuild_performance(run_id)
+        cumulative_values, _, _ = rebuild_performance(run_id)
         engine = create_engine()
         df = connect_time_series(engine, "test_data")
-        spx = df["SPX Close"][backtest_start_date:]
-        rf = df["RF Rate"][backtest_start_date:]
+        spx = df["SPX Close"]
+        rf = df["RF Rate"]
         
         # cumulative_values = cumulative_values.pct_change()
         # benchmark = spx.pct_change()
@@ -373,9 +415,7 @@ def analyze_alpha(run_id):
     spx_after_date = df["SPX Close"][backtest_start_date:].iloc[0]
 
     current_portfolio_value = spx_after_date
-    
-    cumulative_values = pd.DataFrame()
-       
+           
     run_period = 1
     results = []
     while True:
@@ -430,6 +470,6 @@ def analyze_alpha(run_id):
         else:
             negative_count += 1 
             worst = min(worst, res['alpha_ann'])
-    print(f"a total of {negative_count} periods were negative, with the worst being {worst}")
+    print(f"a total of {negative_count} periods out of {len(results)} were negative, with the worst being {worst}")
     # print(f"period {run_period}: beta={res['beta']:.2f}, alpha_ann={res['alpha_ann']:.2%}")
     

@@ -14,13 +14,25 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 settings.array_wrapper['freq'] = '1D'
 
 import random
-seed = 69
-random.seed(seed)
-np.random.seed(seed)
+
+MIN_GEN = 75
 
 engine = create_engine()
 df = connect_time_series(engine, "test_data")
 spxt = df["SPX Close"]
+
+import sys
+
+_first = True
+
+def print_replace(line: str):
+    global _first
+    if not _first:
+        sys.stdout.write('\x1b[1A')  # move cursor up 1 line
+        sys.stdout.write('\x1b[2K')  # clear that line
+    sys.stdout.write(line + '\n')
+    sys.stdout.flush()
+    _first = False
 
 def window_backtest(ref_points, start_date, end_date, max_time_minutes=10, stall_generations=10, max_generations=100, pop_size=500, leverage=3, fitness_config=None):
 
@@ -58,10 +70,11 @@ def window_backtest(ref_points, start_date, end_date, max_time_minutes=10, stall
                         fitness_matrix - ref)    # for maximize
         
         diffs_clipped = np.clip(diffs, a_min=0, a_max=None)
-                
+        
         volumes = np.prod(diffs_clipped, axis=1)  # shape (n_inds,)
- 
-        valid_mask = fitness_matrix[:, 0] > -1000
+         
+        valid_mask = (fitness_matrix[:, 0] > -1000) & np.isfinite(diffs_clipped).all(axis=1)
+
         total_volume = volumes[valid_mask].sum()
         return total_volume
     
@@ -71,9 +84,10 @@ def window_backtest(ref_points, start_date, end_date, max_time_minutes=10, stall
     hypervolume_history.append(current_hypervolume)
     
     # print(f"\nGeneration {generation}: Pareto front size = {len(pareto_front)}, Hypervolume = {current_hypervolume:.4f}")
-    
+    global _first
+    _first = True
     while generation < max_generations:
-        if best_hypervolume != 0:
+        if best_hypervolume > 0:
             generation += 1
         elapsed_time = time.time() - start_time
         
@@ -87,33 +101,34 @@ def window_backtest(ref_points, start_date, end_date, max_time_minutes=10, stall
         
         pareto_front = tools.sortNondominated(population, len(population), first_front_only=True)[0]
         current_hypervolume = calculate_hypervolume(pareto_front, ref_points)
-        
         if current_hypervolume > best_hypervolume:
             improvement = current_hypervolume - best_hypervolume
             stall_counter = 0
             best_hypervolume = current_hypervolume
-            # print(f"NEW BEST! Hypervolume = {current_hypervolume:.4f} (+{improvement:.4f}), Pareto size = {len(pareto_front)}")
+            print_replace(f"Generation {generation}: NEW BEST! Hypervolume = {current_hypervolume:.4f} (+{improvement:.4f}), Pareto size = {len(pareto_front)}")
         elif generation == 0:
-            # print(f"Hypervolume = {current_hypervolume:.4f}, Pareto size = {len(pareto_front)}")
+            print_replace(f"Generation {generation}: Hypervolume = {current_hypervolume:.4f}, Pareto size = {len(pareto_front)}")
             pass
         else:
-            stall_counter += 1
-            # print(f"Hypervolume = {current_hypervolume:.4f} (Stall: {stall_counter}/{stall_generations}), Pareto size = {len(pareto_front)}")
+            if generation < MIN_GEN:
+                print_replace(f"Generation {generation}: Hypervolume = {current_hypervolume:.4f} (Stall: {stall_counter}/{stall_generations}), Pareto size = {len(pareto_front)}")
+            else:
+                stall_counter += 1
+                print_replace(f"Generation {generation}: Hypervolume = {current_hypervolume:.4f} (Stall: {stall_counter}/{stall_generations}), Pareto size = {len(pareto_front)}")
         
         hypervolume_history.append(current_hypervolume)
         
-        if stall_counter >= stall_generations:
-            # print(f"Optimization stalled for {stall_generations} generations")
+        if stall_counter >= stall_generations and generation > MIN_GEN:
             break
     
-    total_time = time.time() - start_time
+    # total_time = time.time() - start_time
     # print(f"\nTotal optimization time: {total_time/60:.2f} minutes")
     # print(f"Final generation: {generation}")
     # print(f"Final Pareto front size: {len(pareto_front)}")
     
     return pareto_front, generation, best_hypervolume
 
-def select_diverse_strategies(pareto_front, n_strategies=10):
+def select_diverse_strategies(pareto_front, n_strategies=10, seed=1):
     from sklearn.preprocessing import StandardScaler
     from sklearn.cluster import KMeans  
     if len(pareto_front) <= n_strategies:
@@ -146,7 +161,6 @@ def select_diverse_strategies(pareto_front, n_strategies=10):
     
     diverse_strategies = []
         
-    diverse_strategies = []
     for cluster_id in np.unique(labels):
         cluster_idx = np.where(labels == cluster_id)[0]
         
@@ -161,7 +175,7 @@ def select_diverse_strategies(pareto_front, n_strategies=10):
     
     return diverse_strategies
 
-def run_ensemble_backtest(cleaned_pareto_front, start_date, target_backtest_duration_months, current_portfolio_value=10000, n_strategies=10, leverage=3, fitness_config=None):
+def run_ensemble_backtest(cleaned_pareto_front, start_date, target_backtest_duration_months, current_portfolio_value=10000, n_strategies=10, leverage=3, fitness_config=None, seed=1):
     """
     Run backtest for ensemble of strategies with equal capital allocation.
     output: List[List] ensemble_strategies (with updated fitness) and the ending portfolio value
@@ -175,11 +189,11 @@ def run_ensemble_backtest(cleaned_pareto_front, start_date, target_backtest_dura
     tentative_end_date_str = tentative_end_date.strftime('%Y-%m-%d')
     
     if len(cleaned_pareto_front) > n_strategies:
-        ensemble_strategies = select_diverse_strategies(cleaned_pareto_front, n_strategies=n_strategies)
-        ensemble_count = len(ensemble_strategies)
+        ensemble_strategies = select_diverse_strategies(cleaned_pareto_front, n_strategies=n_strategies, seed=seed)
     else:
         ensemble_strategies = cleaned_pareto_front
-        ensemble_count = n_strategies
+    
+    ensemble_count = len(ensemble_strategies)
     
     # set initial capital per strategy
     # print(f"   Total available capital: ${current_portfolio_value:.2f}")
@@ -211,7 +225,8 @@ def run_ensemble_backtest(cleaned_pareto_front, start_date, target_backtest_dura
     end_date_str = end_date.strftime('%Y-%m-%d')
 
     benchmark = Portfolio.from_holding(close=spxt[start_date_str:end_date_str], freq='1D')
-
+    rf = df["RF Rate"][start_date_str:end_date_str]
+    
     # recast to relevant send_date slice    
     sliced_pfs = Portfolio.from_holding(
         close = pfs.value().loc[:end_date_str],
@@ -220,7 +235,7 @@ def run_ensemble_backtest(cleaned_pareto_front, start_date, target_backtest_dura
     )
     
     # find out-of-sample fitness for ensemble strategies
-    all_metrics = calc_metrics(sliced_pfs, benchmark, ensemble_params)
+    all_metrics = calc_metrics(sliced_pfs, benchmark, rf, ensemble_params)
     
     # rewrite fitness with out-of-sample values    
     for i, individual in enumerate(ensemble_strategies):
@@ -242,34 +257,43 @@ def run_ensemble_backtest(cleaned_pareto_front, start_date, target_backtest_dura
         freq  = pfs.wrapper.freq
     )
     
-    portfolio_value = combined_performance.iloc[-1]
-    period_return   = (portfolio_value / combined_performance.iloc[0]) - 1
-    combined_metrics = calc_metrics(combined_pf, benchmark, ensemble_params)
+    i_start = spxt.index.searchsorted(start_date_str, side="left") 
+    i_end = spxt.index.searchsorted(end_date_str, side="right") - 1 
+    benchmark_start = spxt.iloc[i_start] 
+    benchmark_end = spxt.iloc[i_end]    
+    period_return   = (combined_performance.iloc[-1] / combined_performance.iloc[0]) - 1
+    combined_metrics = calc_metrics(combined_pf, benchmark, rf, ensemble_params)
     print(f"supposed starting value (current_portfolio_value) is ${current_portfolio_value}")
     print(f"\nActual out-of-sample range: {start_date_str} to {end_date_str}")
     print(f"\nEnsemble out-of-sample performance:")
     print(f"   Starting Value: ${combined_performance.iloc[0]:.2f}")
-    print(f"   Final Value: ${portfolio_value:.2f}")
-    print(f"   Starting Benchmark Value: ${spxt[start_date_str]:.2f}")
-    print(f"   Final Benchmark Value: ${spxt[end_date_str]:.2f}")
+    print(f"   Final Value: ${combined_performance.iloc[-1]:.2f}")
+    print(f"   Starting Benchmark Value: ${benchmark_start:.2f}")
+    print(f"   Final Benchmark Value: ${benchmark_end:.2f}")
     print(f"   Period Return: {period_return:.2%}")
     print(f"   Benchmark Return: {benchmark.total_return():.2%}")
     print(f"   Max Drawdown: {combined_metrics['drawdown']:.2%}")
     print(f"   Rel Drawdown: {combined_metrics['rel_drawdown']:.2%}")
     print(f"   Sharpe Ratio: {combined_metrics['sharpe']:.3f}")
     print(f"   Sortino Ratio: {combined_metrics['sortino']:.3f}")
+    print(f"   Beta: {combined_metrics['beta']}")
     print(f"   Number of strategies: {len(ensemble_strategies)}")
+    
     
     return ensemble_strategies, combined_performance, end_date
 
 def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sample_months=12, 
-                             max_time_minutes=5, stall_generations=5, max_generations = 100, pop_size=500, n_ensemble=10, leverage=3, fitness_config=None):    
+                             max_time_minutes=5, stall_generations=5, max_generations = 100, 
+                             pop_size=500, n_ensemble=10, leverage=3, fitness_config=None, rand_seed=1):    
     from go import set_fitness_config
     from wfo_sql import insert_new_run, insert_period_summary, insert_period_strategies
-
+    global seed
+    seed = rand_seed
+    random.seed(seed)
+    np.random.seed(seed)
     run_id = insert_new_run(engine, start_date, end_date, in_sample_months, 
-                   out_sample_months, pop_size, n_ensemble, 
-                   leverage, fitness_config)
+            out_sample_months, pop_size, n_ensemble, 
+            leverage, fitness_config)
     
     # set fitness configuration if provided
     if fitness_config:
@@ -330,24 +354,15 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
             fitness_config=fitness_config
         )
         
-        # select diverse strategies for ensemble
-        if 'alpha' in fitness_config.selected_metrics:
-            alpha_index = fitness_config.selected_metrics.index('alpha')
-            cleaned_pareto_front = [ind for ind in pareto_front if ind.fitness.values[alpha_index] > 0]
-        else:
-            cleaned_pareto_front = pareto_front 
-            
-        if not cleaned_pareto_front:
-            cleaned_pareto_front = pareto_front
-        
         ensemble_strategies, combined_performance, actual_end_date = run_ensemble_backtest(
-            cleaned_pareto_front, 
+            pareto_front, 
             out_sample_start, 
             out_sample_months, 
             current_portfolio_value,
             n_strategies=n_ensemble,
             leverage=leverage,
-            fitness_config=fitness_config
+            fitness_config=fitness_config, 
+            seed=rand_seed
         )
             
         period_id = insert_period_summary(engine, run_id, period, current_start, 

@@ -65,7 +65,7 @@ def evaluate(pop, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
     pfs = run(params, start_date=start_date, end_date=end_date, stop_entry_date=end_date, leverage=leverage)
     
     # get all metrics
-    metrics_dict = calc_metrics(pfs, benchmark, params)
+    metrics_dict = calc_metrics(pfs, benchmark, rf, params)
     
     # calculate fitness using selected metrics
     fitness_vals = fitness(metrics_dict, config)
@@ -149,6 +149,7 @@ engine = create_engine()
 df = connect_time_series(engine, "test_data")
 spxt = df["SPX Close"]
 benchmark = Portfolio.from_holding(close=spxt, freq='1D')
+rf = df["RF Rate"]
 
 toolbox = base.Toolbox()
 toolbox.register("attr_window", random.randint, WINDOW_MIN, WINDOW_MAX)

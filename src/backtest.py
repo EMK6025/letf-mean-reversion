@@ -100,11 +100,13 @@ def apply(price, prelim_entry, prelim_exit, size, sell_threshold):
     return size_array
 
 def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, leverage=3):    
-    if leverage < 2: 
+    if leverage < 1: 
+        leverage = 1
+    elif leverage < 2:
         leverage = 2
     elif leverage > 4: 
         leverage = 4
-    letf = df[f"{leverage}x LETF"]
+    letf = df["SPXTR Close"] if leverage == 1 else df[f"{leverage}x LETF"] 
     
     # prevent bugs down the line with a portfolio that just does nothing past available data
     if type(end_date) == str:
