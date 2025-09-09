@@ -28,8 +28,8 @@ _first = True
 def print_replace(line: str):
     global _first
     if not _first:
-        sys.stdout.write('\x1b[1A')  # move cursor up 1 line
-        sys.stdout.write('\x1b[2K')  # clear that line
+        sys.stdout.write('\x1b[1A')  # move cursor up
+        sys.stdout.write('\x1b[2K')  # clear line
     sys.stdout.write(line + '\n')
     sys.stdout.flush()
     _first = False
@@ -287,10 +287,8 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
                              pop_size=500, n_ensemble=10, leverage=3, fitness_config=None, rand_seed=1):    
     from go import set_fitness_config
     from wfo_sql import insert_new_run, insert_period_summary, insert_period_strategies
-    global seed
-    seed = rand_seed
-    random.seed(seed)
-    np.random.seed(seed)
+    random.seed(rand_seed)
+    np.random.seed(rand_seed)
     run_id = insert_new_run(engine, start_date, end_date, in_sample_months, 
             out_sample_months, pop_size, n_ensemble, 
             leverage, fitness_config)
@@ -312,6 +310,7 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
     print(f"WALK-FORWARD OPTIMIZATION WITH ENSEMBLE")
     print(f"In-sample period: {in_sample_months} months, Out-of-sample period: {out_sample_months} months")
     print(f"Ensemble size: {n_ensemble} strategies per period")
+    print(f"seed: {rand_seed}")
     print(f"{'='*80}\n")
     
     current_start = start_date

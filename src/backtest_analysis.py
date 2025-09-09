@@ -382,85 +382,88 @@ def analyze_alpha_all():
         res = capm_alpha_beta(cumulative_values, spx, rf, periods_per_year=252)
         print(f"run {run_id}: beta={res['beta']:.2f}, alpha_ann={res['alpha_ann']:.2%}")
 
-def analyze_alpha(run_id):
+def analyze_probability_of_outperformance(run_ids):
     import pandas as pd
     from backtest import run, Params
     
     engine = create_engine()
     df = connect_time_series(engine, "test_data")
-    runs = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
-    periods = pd.read_sql(f"SELECT * FROM wfo_period_summary WHERE run_id = {run_id}", engine)
     
-    strategies = connect(engine, "wfo_strategy")
-    strategies = (
-        strategies
-        [strategies['run_id'] == run_id]
-        .sort_values(by='period_id')
-        .reset_index(drop=True)
-    )    
-    
-    # print(f"length of strategies: {len(strategies)}")
-    start_date = pd.to_datetime(runs['start_date'].iloc[0])
-    end_date = pd.to_datetime(runs['end_date'].iloc[0])
-    in_sample_months = runs['in_sample_months'].iloc[0]
-    leverage = runs['leverage'].iloc[0]
-        
-    # take start date, then offset by first in-sample period plus 1 day
-    backtest_start_date = start_date + pd.DateOffset(months=in_sample_months) + pd.DateOffset(days=1)
-    
-    # for col in ['pos_sizing', 'fitness_values']:
-    #     strategies[col] = strategies[col].apply(lambda x: [round(v, 2) for v in x])
-
-    df = connect_time_series(engine, "test_data")
-    spx_after_date = df["SPX Close"][backtest_start_date:].iloc[0]
-
-    current_portfolio_value = spx_after_date
-           
-    run_period = 1
+    runs = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id IN ({', '.join(str(x) for x in run_ids)})", engine)
     results = []
-    while True:
-        current_period = periods[periods['period_index'] == run_period]
-        if len(current_period) == 0:
-            break
-        current_period = current_period.iloc[0]
-        period_id = current_period['period_id']
+    for cur_run in runs.itertuples(index=False):
+        periods = pd.read_sql(f"SELECT * FROM wfo_period_summary WHERE run_id = {cur_run.run_id}", engine)
+        strategies = connect(engine, "wfo_strategy")
+        strategies = (
+            strategies
+            [strategies['run_id'] == cur_run.run_id]
+            .sort_values(by='period_id')
+            .reset_index(drop=True)
+        )    
         
-        period_start_date = current_period['in_sample_end'] + pd.DateOffset(days=1)
-        period_end_date = pd.Timestamp(current_period['out_sample_end'])
-        if period_end_date > end_date:
-            period_end_date = end_date
+        # print(f"length of strategies: {len(strategies)}")
+        start_date = pd.to_datetime(cur_run.start_date)
+        end_date = pd.to_datetime(cur_run.end_date)
+
+        in_sample_months = cur_run.in_sample_months
+        leverage = cur_run.leverage
             
-        period_strategies = strategies[strategies['period_id'] == period_id]
-        if len(period_strategies) == 0:
-            break        
+        # take start date, then offset by first in-sample period plus 1 day
+        backtest_start_date = start_date + pd.DateOffset(months=in_sample_months) + pd.DateOffset(days=1)
         
-        period_ensemble_params = []
-        for i in range(0,len(period_strategies)):
-            period_ensemble_params.append(Params(
-                window=int(period_strategies["window"].iloc[i]),
-                entry=int(period_strategies["entry"].iloc[i]),
-                exit=int(period_strategies["exit"].iloc[i]),
-                sell_threshold=int(period_strategies["sell_threshold"].iloc[i]),
-                position_sizing=np.array([float(x) for x in period_strategies["pos_sizing"].iloc[i]])
-            ))
+        # for col in ['pos_sizing', 'fitness_values']:
+        #     strategies[col] = strategies[col].apply(lambda x: [round(v, 2) for v in x])
+
+        df = connect_time_series(engine, "test_data")
+        spx_after_date = df["SPX Close"][backtest_start_date:].iloc[0]
+
+        current_portfolio_value = spx_after_date
+            
+        run_period = 1
+        while True:
+            current_period = periods[periods['period_index'] == run_period]
+            if len(current_period) == 0:
+                break
+            current_period = current_period.iloc[0]
+            period_id = current_period['period_id']
+            
+            period_start_date = current_period['in_sample_end'] + pd.DateOffset(days=1)
+            period_end_date = pd.Timestamp(current_period['out_sample_end'])
+            if period_end_date > end_date:
+                period_end_date = end_date
+                
+            period_strategies = strategies[strategies['period_id'] == period_id]
+            if len(period_strategies) == 0:
+                break        
+            
+            period_ensemble_params = []
+            for i in range(0,len(period_strategies)):
+                period_ensemble_params.append(Params(
+                    window=int(period_strategies["window"].iloc[i]),
+                    entry=int(period_strategies["entry"].iloc[i]),
+                    exit=int(period_strategies["exit"].iloc[i]),
+                    sell_threshold=int(period_strategies["sell_threshold"].iloc[i]),
+                    position_sizing=np.array([float(x) for x in period_strategies["pos_sizing"].iloc[i]])
+                ))
+            
+            initial_capital_per_strategy = current_portfolio_value/len(period_ensemble_params)
+            
+            pfs = run(period_ensemble_params, period_start_date, 
+                    period_end_date, period_end_date, 
+                    initial_capital_per_strategy, leverage)
+            
+            combined_performance = pfs.value().sum(axis=1)
+            spx = df["SPX Close"][period_start_date:period_end_date]
+            rf = df["RF Rate"][period_start_date:period_end_date]
+            
+            # print(f" date range of combined_performance is {combined_performance.index[0]} to {combined_performance.index[-1]}")
+            # print(f" date range of spx is {spx.index[0]} to {spx.index[-1]}")
+            # print(f" date range of rf is {rf.index[0]} to {rf.index[-1]}")
+            res = capm_alpha_beta(combined_performance, spx, rf, periods_per_year=252)
+            results.append(res)        
+            
+            run_period += 1
         
-        initial_capital_per_strategy = current_portfolio_value/len(period_ensemble_params)
-        
-        pfs = run(period_ensemble_params, period_start_date, 
-                  period_end_date, period_end_date, 
-                  initial_capital_per_strategy, leverage)
-        
-        combined_performance = pfs.value().sum(axis=1)
-        spx = df["SPX Close"][period_start_date:period_end_date]
-        rf = df["RF Rate"][period_start_date:period_end_date]
-        
-        # print(f" date range of combined_performance is {combined_performance.index[0]} to {combined_performance.index[-1]}")
-        # print(f" date range of spx is {spx.index[0]} to {spx.index[-1]}")
-        # print(f" date range of rf is {rf.index[0]} to {rf.index[-1]}")
-        res = capm_alpha_beta(combined_performance, spx, rf, periods_per_year=252)
-        results.append(res)        
-        
-        run_period += 1
     positive_count = 0
     negative_count = 0
     worst = 999
@@ -470,6 +473,41 @@ def analyze_alpha(run_id):
         else:
             negative_count += 1 
             worst = min(worst, res['alpha_ann'])
+            
     print(f"a total of {negative_count} periods out of {len(results)} were negative, with the worst being {worst}")
-    # print(f"period {run_period}: beta={res['beta']:.2f}, alpha_ann={res['alpha_ann']:.2%}")
     
+    
+def analyse_gameplan(run_ids):
+    import pandas as pd
+    import numpy as np
+    
+    engine = create_engine()
+    
+    results = []
+    strategies = connect(engine, "wfo_strategy")
+    results = strategies.loc[strategies["run_id"].isin(run_ids), "pos_sizing"].str[0].to_numpy()
+        
+    mean = np.mean(results)
+    median = np.median(results)
+    max = np.max(results)
+    print(f"median base holdings is {median} while mean is {mean}")
+    print(f"max is {max}")
+
+def analyse_rsi(run_ids):
+    import pandas as pd
+    import numpy as np
+    
+    engine = create_engine()
+    
+    results = []
+    strategies = connect(engine, "wfo_strategy")
+    results = strategies.loc[strategies["run_id"].isin(run_ids), ["window", "entry", "exit"]]
+    window = results["window"]
+    entry = results["entry"]
+    exit = results["exit"]
+    window_mid = np.median(window)
+    entry_mid = np.median(entry)
+    exit_mid = np.median(exit)
+    print(f"window_mid is {window_mid}")
+    print(f"entry_mid is {entry_mid}")
+    print(f"exit_mid is {exit_mid}")
