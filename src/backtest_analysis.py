@@ -69,9 +69,10 @@ def rebuild_performance(run_id):
         
         capital_per_strategy = current_portfolio_value/len(period_ensemble_params)
         
+        # run with eval on, aka uninvested cash is put into short term bonds aka the RF rate
         pfs = run(period_ensemble_params, period_start_date, 
                   period_end_date, period_end_date, 
-                  capital_per_strategy, leverage)
+                  capital_per_strategy, leverage, eval=True)
         
         combined_performance = pfs.value().sum(axis=1)
                 
@@ -366,7 +367,6 @@ def analyze_alpha_all():
     engine = create_engine()
     run = pd.read_sql(f"SELECT run_id FROM wfo_run ORDER BY run_id ASC;", engine)
 
-        
     for run_id in run['run_id']:
         cumulative_values, _, _ = rebuild_performance(run_id)
         engine = create_engine()

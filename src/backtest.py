@@ -99,13 +99,24 @@ def apply(price, prelim_entry, prelim_exit, size, sell_threshold):
 
     return size_array
 
-def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, leverage=3):    
-    if leverage < 1: 
-        leverage = 1
-    elif leverage < 2:
-        leverage = 2
-    elif leverage > 4: 
-        leverage = 4
+indicator = IndicatorFactory(
+    input_names = ['price', 'prelim_entry', 'prelim_exit'],
+    param_names = ['size', 'sell_threshold'],
+    output_names = ['size_array']
+).from_apply_func(
+    apply,
+    param_settings={ # vectorize param_names 
+        'size': dict(is_array_like=True),
+        'sell_threshold': dict(is_array_like=True)
+    }
+)
+
+"""
+eval determines if uninvested cash is put into short term bonds or not.
+defaults to false as those gains should not be optimized for during backtests.
+"""
+def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, leverage=3, eval=False):    
+    leverage = int(np.clip(round(leverage), 1, 4))
     letf = df["SPXTR Close"] if leverage == 1 else df[f"{leverage}x LETF"] 
     
     # prevent bugs down the line with a portfolio that just does nothing past available data
@@ -113,7 +124,8 @@ def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, le
         end_date = min(end_date, df.index[-1].strftime('%Y-%m-%d'))
     else:
         end_date = min(end_date, df.index[-1]).strftime('%Y-%m-%d')
-        
+    
+    # grab RSI windows for each
     windows = np.array([param.window for param in params])
     idx = [(w, True) for w in windows]
     
@@ -140,18 +152,7 @@ def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, le
         {i: parse(exit_mask.iloc[:, i],  windows[i]) 
             for i in range(len(params)) }
     )
-
-    indicator = IndicatorFactory(
-        input_names = ['price', 'prelim_entry', 'prelim_exit'],
-        param_names = ['size', 'sell_threshold'],
-        output_names = ['size_array']
-    ).from_apply_func(
-        apply,
-        param_settings={ # vectorize param_names 
-            'size': dict(is_array_like=True),
-            'sell_threshold': dict(is_array_like=True)
-        }
-    )
+    
     ind = indicator.run(
         price           = letf,
         prelim_entry    = prelim_entries,
@@ -159,8 +160,9 @@ def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, le
         size            = position_sizes,
         sell_threshold  = sell_thresholds
     )
+    
     target_pct = ind.size_array.to_numpy()
-
+    
     orders = pd.DataFrame(
         target_pct,
         index=price.index,
@@ -171,7 +173,7 @@ def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, le
     orders_masked.iloc[0, :] = orders.iloc[0, :]
     size_changes = orders_masked.to_numpy()
     
-    pf = Portfolio.from_orders(
+    pfs = Portfolio.from_orders(
         close      = letf,
         size       = size_changes,
         init_cash  = initial_capital,
@@ -181,4 +183,25 @@ def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, le
         slippage = 2 / 1e4
 
     )
-    return pf
+    
+    if not eval:
+        return pfs
+    
+    rf = df["RF Rate"].reindex(pfs.value().index).ffill()
+    
+    # convert percentage to decimal
+    rf = rf / 100.0
+    
+    cash = pfs.cash()
+    cash_prev = cash.shift(1).fillna(0.0)
+    interest = cash_prev.mul(rf, axis=0)
+    interest_cum = interest.cumsum()
+    equity_with_rf = pfs.value() + interest_cum
+    
+    pfs = Portfolio.from_holding(
+        close=equity_with_rf,
+        init_cash = equity_with_rf.iloc[0],
+        freq='1D'
+    )
+    return pfs
+    
