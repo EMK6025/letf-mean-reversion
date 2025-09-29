@@ -1,6 +1,5 @@
 import pandas as pd
 from engine import create_engine, connect_time_series
-from load_LETFs import theoretical_return
 import numpy as np
 import random
 from sql_functions import update_sql_table

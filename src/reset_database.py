@@ -1,9 +1,14 @@
 from sql_functions import reset, clean, show
 import pandas as pd
 from engine import create_engine, connect_time_series
+from loading import (
+    load_RF, 
+    load_ETFs, 
+    load_LETF_change,
+    load_LETFs
+)
 
 def repopulate_test_data():
-    import load_RF, load_ETFs, load_LETFs, load_LETF_change
     engine = create_engine()
     reset(engine)
     # load borrowing costs

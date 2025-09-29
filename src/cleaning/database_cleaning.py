@@ -1,6 +1,4 @@
 import pandas as pd
-from sql_functions import update_sql_table
-from engine import create_engine
 from pathlib import Path
 
 def main():

@@ -1,4 +1,3 @@
-import pandas as pd
 from pandas import Series
 from engine import create_engine, connect_time_series
 from sql_functions import update_sql_table
