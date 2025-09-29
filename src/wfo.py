@@ -272,11 +272,11 @@ def run_ensemble_backtest(cleaned_pareto_front, start_date, target_backtest_dura
     print(f'   Final Benchmark Value: ${benchmark_end:.2f}')
     print(f'   Period Return: {period_return:.2%}')
     print(f'   Benchmark Return: {benchmark.total_return():.2%}')
-    print(f'   Max Drawdown: {combined_metrics['drawdown']:.2%}')
-    print(f'   Rel Drawdown: {combined_metrics['rel_drawdown']:.2%}')
-    print(f'   Sharpe Ratio: {combined_metrics['sharpe']:.3f}')
-    print(f'   Sortino Ratio: {combined_metrics['sortino']:.3f}')
-    print(f'   Beta: {combined_metrics['beta']}')
+    print(f'   Max Drawdown: {combined_metrics["drawdown"]:.2%}')
+    print(f'   Rel Drawdown: {combined_metrics["rel_drawdown"]:.2%}')
+    print(f'   Sharpe Ratio: {combined_metrics["sharpe"]:.3f}')
+    print(f'   Sortino Ratio: {combined_metrics["sortino"]:.3f}')
+    print(f'   Beta: {combined_metrics["beta"]}')
     print(f'   Number of strategies: {len(ensemble_strategies)}')
     
     
@@ -306,12 +306,12 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
     start_date = pd.Timestamp(start_date)
     end_date = pd.Timestamp(end_date)
     
-    print(f'\n{'='*80}')
+    print(f'\n{"="*80}')
     print(f'WALK-FORWARD OPTIMIZATION WITH ENSEMBLE')
     print(f'In-sample period: {in_sample_months} months, Out-of-sample period: {out_sample_months} months')
     print(f'Ensemble size: {n_ensemble} strategies per period')
     print(f'seed: {rand_seed}')
-    print(f'{'='*80}\n')
+    print(f'{"="*80}\n')
     
     current_start = start_date
     first_in_sample_end = current_start + pd.DateOffset(months=in_sample_months)
@@ -335,11 +335,11 @@ def walk_forward_optimization(start_date, end_date, in_sample_months=60, out_sam
         out_sample_start_str = out_sample_start.strftime('%Y-%m-%d')
         out_sample_end_str = out_sample_end.strftime('%Y-%m-%d')
         
-        print(f'\n{'='*80}')
+        print(f'\n{"="*80}')
         print(f'PERIOD {period}')
         print(f'In-sample: {in_sample_start_str} to {in_sample_end_str}')
         print(f'Target Out-of-sample: {out_sample_start_str} to {out_sample_end_str}')
-        print(f'{'='*80}\n')
+        print(f'{"="*80}\n')
         
         pareto_front, generation_count, hypervolume = window_backtest(
             ref_points,

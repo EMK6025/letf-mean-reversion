@@ -89,7 +89,7 @@ def create_initial_population(pop_size=50, start_date='1989-12-31', end_date='20
 def show_population(pop):
     print('\nPopulation Fitness Scores (Multi-Objective):')
     print('='*80)
-    print(f'{'#':<3} {'Sortino':<8} {'Sharpe':<8} {'RelDD':<8} {'Alpha':<8} {'Window':<6} {'Entry':<5} {'Exit':<4}')
+    print(f'{"#":<3} {"Sortino":<8} {"Sharpe":<8} {"RelDD":<8} {"Alpha":<8} {"Window":<6} {"Entry":<5} {"Exit":<4}')
     print('-'*80)
     
     for i, ind in enumerate(pop):

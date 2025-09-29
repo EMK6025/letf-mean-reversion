@@ -3,16 +3,16 @@ from engine import create_engine, connect_time_series
 from vectorbt import Portfolio
 import matplotlib.pyplot as plt
 
-START = "2000-01-01"
+START = '2000-01-01'
 
 def main():
     engine = create_engine()
-    df = connect_time_series(engine, "test_data")
+    df = connect_time_series(engine, 'test_data')
     # df = df.loc[START:]
-    spxt = df["SPX Close"]
-    sso = df["2x LETF"]
-    upro = df["3x LETF"]
-    letf4x = df["4x LETF"]
+    spxt = df['SPX Close']
+    sso = df['2x LETF']
+    upro = df['3x LETF']
+    letf4x = df['4x LETF']
 
     base = Portfolio.from_holding(
         close      = spxt,
