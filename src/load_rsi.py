@@ -4,7 +4,6 @@ from engine import create_engine, connect_time_series
 import vectorbt as vbt
 from sql_functions import update_sql_table
 
-
 def main():
     engine = create_engine()
     df = connect_time_series(engine, 'test_data')

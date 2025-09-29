@@ -8,11 +8,10 @@ def main():
     engine = create_engine()
     proj_path = Path(__file__).resolve().parent.parent 
     
-    SPX_path = proj_path / 'SPX-data.csv'
-    SPXTR_path = proj_path / 'SPXTR-data.csv'
+    csv_path = proj_path / 'combined-data.csv'
     
-    spx = pd.read_csv(SPX_path, usecols=['Date', 'Close'])
-    spxtr = pd.read_csv(SPXTR_path, usecols=['Date', 'Close'])
+    spx = pd.read_csv(csv_path, usecols=['Date', 'SPX Close'])
+    spxtr = pd.read_csv(csv_path, usecols=['Date', 'SPXTR Close'])
     
     # as spx is used as benchmark, import history directly
     spx['Date'] = pd.to_datetime(spx['Date'], dayfirst=False).dt.date
