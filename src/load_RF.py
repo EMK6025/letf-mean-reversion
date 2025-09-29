@@ -9,11 +9,11 @@ def main():
     df = pd.read_csv('F-F_Research_Data_Factors_daily.CSV', usecols=['Date', 'RF'])
 
     df = df.rename(columns={
-        "RF": "RF Rate"
+        'RF': 'RF Rate'
     })
 
-    df["Date"] = pd.to_datetime(df["Date"], format="%Y%m%d").dt.date
+    df['Date'] = pd.to_datetime(df['Date'], format='%Y%m%d').dt.date
     df['RF Rate'] = df['RF Rate'].astype(float)
 
-    update_sql_table(df, engine, "RF")
+    update_sql_table(df, engine, 'RF')
 

@@ -8,7 +8,7 @@ import random
 import warnings
 from fitness import fitness, calc_metrics, FitnessConfig
 
-warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
+warnings.filterwarnings('ignore', category=FutureWarning, module='vectorbt')
 vbt.settings.array_wrapper['freq'] = '1D'
 
 WINDOW_MIN, WINDOW_MAX = 3, 20
@@ -21,8 +21,8 @@ global _fitness_config
 _fitness_config = FitnessConfig()
     
 weights = tuple(_fitness_config.get_weights())
-creator.create("FitnessMulti", base.Fitness, weights=weights)
-creator.create("Individual", list, fitness=creator.FitnessMulti)
+creator.create('FitnessMulti', base.Fitness, weights=weights)
+creator.create('Individual', list, fitness=creator.FitnessMulti)
     
 def set_fitness_config(config: FitnessConfig):
     global _fitness_config
@@ -30,7 +30,7 @@ def set_fitness_config(config: FitnessConfig):
     creator.FitnessMulti.weights = tuple(_fitness_config.get_weights())
 
 def get_fitness_config():
-    """Get the current fitness configuration"""
+    '''Get the current fitness configuration'''
     global _fitness_config
     if _fitness_config is None:
         # use default configuration
@@ -47,7 +47,7 @@ def create_individual():
         *sorted([toolbox.attr_pos_size() for _ in range(11)])
     ]
 
-def evaluate(pop, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
+def evaluate(pop, start_date='1989-12-31', end_date='2020-12-31', leverage=3):
     from backtest import Params, run
     config = get_fitness_config()
     
@@ -71,14 +71,14 @@ def evaluate(pop, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
     fitness_vals = fitness(metrics_dict, config)
     return list(zip(*fitness_vals))
 
-def run_population(pop, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
+def run_population(pop, start_date='1989-12-31', end_date='2020-12-31', leverage=3):
     fitnesses = evaluate(pop, start_date, end_date, leverage)
 
     for ind, fit in zip(pop, fitnesses):
         ind.fitness.values = fit
     return pop
 
-def create_initial_population(pop_size=50, start_date="1989-12-31", end_date="2020-12-31", leverage=3, fitness_config=None):
+def create_initial_population(pop_size=50, start_date='1989-12-31', end_date='2020-12-31', leverage=3, fitness_config=None):
     if fitness_config:
         set_fitness_config(fitness_config)
     
@@ -87,19 +87,19 @@ def create_initial_population(pop_size=50, start_date="1989-12-31", end_date="20
     return pop
 
 def show_population(pop):
-    print("\nPopulation Fitness Scores (Multi-Objective):")
-    print("="*80)
-    print(f"{'#':<3} {'Sortino':<8} {'Sharpe':<8} {'RelDD':<8} {'Alpha':<8} {'Window':<6} {'Entry':<5} {'Exit':<4}")
-    print("-"*80)
+    print('\nPopulation Fitness Scores (Multi-Objective):')
+    print('='*80)
+    print(f'{'#':<3} {'Sortino':<8} {'Sharpe':<8} {'RelDD':<8} {'Alpha':<8} {'Window':<6} {'Entry':<5} {'Exit':<4}')
+    print('-'*80)
     
     for i, ind in enumerate(pop):
         sortino, sharpe, rel_dd, alpha = ind.fitness.values
-        print(f"{i:<3} {sortino:<8.3f} {sharpe:<8.3f} {rel_dd:<8.3f} {alpha:<8.3f} "
-              f"{ind[0]:<6} {ind[1]:<5} {ind[2]:<4}")
+        print(f'{i:<3} {sortino:<8.3f} {sharpe:<8.3f} {rel_dd:<8.3f} {alpha:<8.3f} '
+              f'{ind[0]:<6} {ind[1]:<5} {ind[2]:<4}')
 
-def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date="1989-12-31", end_date="2020-12-31", leverage=3):
+def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date='1989-12-31', end_date='2020-12-31', leverage=3):
     pop_size = len(population)
-    """
+    '''
     Takes the current population and their fitness scores, then generates the next
     generation using selection, crossover, and mutation.
     
@@ -110,7 +110,7 @@ def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date="19
     
     Returns:
         List of individuals representing the next generation
-    """
+    '''
     
     pop_size = len(population)
     
@@ -146,19 +146,19 @@ def create_next_generation(population, cx_prob=0.5, mut_prob=0.2, start_date="19
     return next_gen
 
 engine = create_engine()
-df = connect_time_series(engine, "test_data")
-spxt = df["SPX Close"]
+df = connect_time_series(engine, 'test_data')
+spxt = df['SPX Close']
 benchmark = Portfolio.from_holding(close=spxt, freq='1D')
-rf = df["RF Rate"]
+rf = df['RF Rate']
 
 toolbox = base.Toolbox()
-toolbox.register("attr_window", random.randint, WINDOW_MIN, WINDOW_MAX)
-toolbox.register("attr_entry", random.randint, ENTRY_MIN, ENTRY_MAX)
-toolbox.register("attr_exit", random.randint, EXIT_MIN, EXIT_MAX)
-toolbox.register("attr_sell_thresh", random.randint, SELL_THRESH_MIN, SELL_THRESH_MAX)
-toolbox.register("attr_pos_size", random.uniform, POS_SIZE_MIN, POS_SIZE_MAX)
-toolbox.register("individual", tools.initIterate, creator.Individual, create_individual)
-toolbox.register("population", tools.initRepeat, list, toolbox.individual)
-toolbox.register("mate", tools.cxTwoPoint)
-toolbox.register("mutate", tools.mutGaussian, mu=0, sigma=1, indpb=0.1)
-toolbox.register("select", tools.selNSGA2)
+toolbox.register('attr_window', random.randint, WINDOW_MIN, WINDOW_MAX)
+toolbox.register('attr_entry', random.randint, ENTRY_MIN, ENTRY_MAX)
+toolbox.register('attr_exit', random.randint, EXIT_MIN, EXIT_MAX)
+toolbox.register('attr_sell_thresh', random.randint, SELL_THRESH_MIN, SELL_THRESH_MAX)
+toolbox.register('attr_pos_size', random.uniform, POS_SIZE_MIN, POS_SIZE_MAX)
+toolbox.register('individual', tools.initIterate, creator.Individual, create_individual)
+toolbox.register('population', tools.initRepeat, list, toolbox.individual)
+toolbox.register('mate', tools.cxTwoPoint)
+toolbox.register('mutate', tools.mutGaussian, mu=0, sigma=1, indpb=0.1)
+toolbox.register('select', tools.selNSGA2)

@@ -9,10 +9,10 @@ settings.array_wrapper['freq'] = '1D'
 def rebuild_performance(run_id):
     from backtest import run, Params
     engine = create_engine()
-    runs = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
-    periods = pd.read_sql(f"SELECT * FROM wfo_period_summary WHERE run_id = {run_id}", engine)
+    runs = pd.read_sql(f'SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1', engine)
+    periods = pd.read_sql(f'SELECT * FROM wfo_period_summary WHERE run_id = {run_id}', engine)
     
-    strategies = connect(engine, "wfo_strategy")
+    strategies = connect(engine, 'wfo_strategy')
     strategies = (
         strategies
         [strategies['run_id'] == run_id]
@@ -20,7 +20,7 @@ def rebuild_performance(run_id):
         .reset_index(drop=True)
     )    
     
-    # print(f"length of strategies: {len(strategies)}")
+    # print(f'length of strategies: {len(strategies)}')
     start_date = pd.to_datetime(runs['start_date'].iloc[0])
     end_date = pd.to_datetime(runs['end_date'].iloc[0])
     in_sample_months = runs['in_sample_months'].iloc[0]
@@ -32,8 +32,8 @@ def rebuild_performance(run_id):
     # for col in ['pos_sizing', 'fitness_values']:
     #     strategies[col] = strategies[col].apply(lambda x: [round(v, 2) for v in x])
 
-    df = connect_time_series(engine, "test_data")
-    spx_after_date = df["SPX Close"][backtest_start_date:].iloc[0]
+    df = connect_time_series(engine, 'test_data')
+    spx_after_date = df['SPX Close'][backtest_start_date:].iloc[0]
 
     current_portfolio_value = spx_after_date
     
@@ -60,11 +60,11 @@ def rebuild_performance(run_id):
         period_ensemble_params = []
         for i in range(0,len(period_strategies)):
             period_ensemble_params.append(Params(
-                window=int(period_strategies["window"].iloc[i]),
-                entry=int(period_strategies["entry"].iloc[i]),
-                exit=int(period_strategies["exit"].iloc[i]),
-                sell_threshold=int(period_strategies["sell_threshold"].iloc[i]),
-                position_sizing=np.array([float(x) for x in period_strategies["pos_sizing"].iloc[i]])
+                window=int(period_strategies['window'].iloc[i]),
+                entry=int(period_strategies['entry'].iloc[i]),
+                exit=int(period_strategies['exit'].iloc[i]),
+                sell_threshold=int(period_strategies['sell_threshold'].iloc[i]),
+                position_sizing=np.array([float(x) for x in period_strategies['pos_sizing'].iloc[i]])
             ))
         
         capital_per_strategy = current_portfolio_value/len(period_ensemble_params)
@@ -81,11 +81,11 @@ def rebuild_performance(run_id):
         else:
             cumulative_values = combined_performance.copy()
    
-        # print(f"Period {run_period}: Start Date {period_start_date}")
-        # print(f"                End Date: {period_end_date}")
-        # print(f"                Starting value: {current_portfolio_value}")
-        # print(f"                Ending value: {combined_performance.iloc[-1]}")
-        # print(f"                Period Return: {(combined_performance.iloc[-1] / combined_performance.iloc[0]) - 1}")
+        # print(f'Period {run_period}: Start Date {period_start_date}')
+        # print(f'                End Date: {period_end_date}')
+        # print(f'                Starting value: {current_portfolio_value}')
+        # print(f'                Ending value: {combined_performance.iloc[-1]}')
+        # print(f'                Period Return: {(combined_performance.iloc[-1] / combined_performance.iloc[0]) - 1}')
         
         current_portfolio_value = combined_performance.iloc[-1]
         period_start_date = period_end_date + pd.DateOffset(days=1)
@@ -97,18 +97,18 @@ def rebuild_performance(run_id):
     return cumulative_values, backtest_start_date, leverage
 
 def analyze_wfo(run_id):
-    """
+    '''
     Analyze walk-forward optimization results with ensemble strategies.
-    """
-    pd.set_option("display.max_columns", None)
-    pd.set_option("display.max_rows", None) 
-    pd.set_option("display.width", None)   
-    pd.set_option("display.max_colwidth", None) 
+    '''
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.max_rows', None) 
+    pd.set_option('display.width', None)   
+    pd.set_option('display.max_colwidth', None) 
     
     cumulative_values, backtest_start_date, _ = rebuild_performance(run_id)
     engine = create_engine()
-    df = connect_time_series(engine, "test_data")
-    spx = df["SPX Close"][backtest_start_date:]
+    df = connect_time_series(engine, 'test_data')
+    spx = df['SPX Close'][backtest_start_date:]
 
     overlap = spx.index.intersection(cumulative_values.index)
     spx = spx.loc[overlap]
@@ -138,20 +138,20 @@ def analyze_wfo(run_id):
     alpha = (pfs.annualized_return() - benchmark.annualized_return())
     annual_return = pfs.annualized_return()
     
-    run = pd.read_sql(f"SELECT * FROM wfo_run where run_id = {run_id} LIMIT 1;", engine)
+    run = pd.read_sql(f'SELECT * FROM wfo_run where run_id = {run_id} LIMIT 1;', engine)
 
     print(run)
     
-    print("=== Performance Metrics ===")
-    print(f"Annualized Return               : {annual_return:.2%}")
-    print(f"Alpha                           : {alpha:.2%}")
-    print(f"Sharpe Ratio                    : {sharpe:.2f}")
-    print(f"Sortino Ratio                   : {sortino:.2f}")
-    print(f"Max Drawdown                    : {drawdown:.2%}")
-    print(f"Relative Drawdown (vs benchmark): {rel_drawdown:.2f}×")
-    print(f"Benchmark Annualized Return     : {benchmark_returns:.2%}")
-    print(f"Benchmark Sharpe Ratio          : {benchmark.returns().vbt.returns.sharpe_ratio():.2f}")
-    print(f"Benchmark Sortino Ratio          : {benchmark.returns().vbt.returns.sortino_ratio():.2f}")
+    print('=== Performance Metrics ===')
+    print(f'Annualized Return               : {annual_return:.2%}')
+    print(f'Alpha                           : {alpha:.2%}')
+    print(f'Sharpe Ratio                    : {sharpe:.2f}')
+    print(f'Sortino Ratio                   : {sortino:.2f}')
+    print(f'Max Drawdown                    : {drawdown:.2%}')
+    print(f'Relative Drawdown (vs benchmark): {rel_drawdown:.2f}×')
+    print(f'Benchmark Annualized Return     : {benchmark_returns:.2%}')
+    print(f'Benchmark Sharpe Ratio          : {benchmark.returns().vbt.returns.sharpe_ratio():.2f}')
+    print(f'Benchmark Sortino Ratio          : {benchmark.returns().vbt.returns.sortino_ratio():.2f}')
         
         # --- compute rolling volatility (annualized) ---
     roll_window = 30
@@ -164,14 +164,14 @@ def analyze_wfo(run_id):
 
     # align indices for plotting (optional but tidy)
     vol = pd.concat(
-        {"Strategy": vol_strat, "Benchmark": vol_bench},
+        {'Strategy': vol_strat, 'Benchmark': vol_bench},
         axis=1
     ).dropna()
 
     # --- plots ---
     fig, (ax, ax2) = plt.subplots(
         2, 1, figsize=(12, 8), sharex=True,
-        gridspec_kw={"height_ratios": [2, 1]}
+        gridspec_kw={'height_ratios': [2, 1]}
     )
 
     # Top: price/equity curves
@@ -192,7 +192,7 @@ def analyze_wfo(run_id):
     ax2.legend(loc='upper left')
 
     plt.tight_layout()
-    plt.savefig("wfo_analysis.png", dpi=300)
+    plt.savefig('wfo_analysis.png', dpi=300)
     plt.show()
 
 
@@ -202,8 +202,8 @@ def analyze_PCA(run_id):
     from sklearn import preprocessing
     
     engine = create_engine()
-    run = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1", engine)
-    strategies = connect(engine, "wfo_strategy")
+    run = pd.read_sql(f'SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1', engine)
+    strategies = connect(engine, 'wfo_strategy')
     strategies = strategies[strategies['run_id'] == run_id]
     
     # grab run.fitness config
@@ -265,25 +265,25 @@ def analyze_fit():
     from engine import create_engine, connect
     import matplotlib.pyplot as plt
     engine = create_engine()
-    run_ids = pd.read_sql(f"SELECT * FROM wfo_run ORDER BY run_id ASC;", engine)
-    all_periods = pd.read_sql(f"SELECT * from wfo_period_summary ORDER BY run_id ASC;", engine)
-    all_strategies = pd.read_sql(f"SELECT * from wfo_strategy;", engine)
+    run_ids = pd.read_sql(f'SELECT * FROM wfo_run ORDER BY run_id ASC;', engine)
+    all_periods = pd.read_sql(f'SELECT * from wfo_period_summary ORDER BY run_id ASC;', engine)
+    all_strategies = pd.read_sql(f'SELECT * from wfo_strategy;', engine)
     gen_to_volume = []
     
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     for row in run_ids.itertuples(index=False):
         run     = row.run_id
-        metrics = row.fitness_config["selected_metrics"]
-        run_periods = all_periods[all_periods["run_id"] == run]
+        metrics = row.fitness_config['selected_metrics']
+        run_periods = all_periods[all_periods['run_id'] == run]
         sorted_alpha = []
         for period in run_periods['period_id']:
             period_strategies = all_strategies[(all_strategies['run_id'] == run) & (all_strategies['period_id'] == period)]
             fitness = period_strategies['fitness_values']
             fitness = pd.DataFrame(fitness.tolist(), columns=metrics)
             sorted_alpha.append(round(fitness['alpha'].mean(), 2))
-        generations = run_periods["generation_count"]
-        hypervolume = run_periods["final_hypervolume"]
+        generations = run_periods['generation_count']
+        hypervolume = run_periods['final_hypervolume']
         ax.scatter(generations, hypervolume, sorted_alpha)
         # grab alpha
         gen_to_volume.extend(list(zip(generations, hypervolume, sorted_alpha)))
@@ -297,7 +297,7 @@ def analyze_fit():
     from sklearn.decomposition import PCA
 
     from sklearn import preprocessing
-    df = pd.DataFrame(gen_to_volume, columns=["Generations", "Hypervolume", "Alpha"])
+    df = pd.DataFrame(gen_to_volume, columns=['Generations', 'Hypervolume', 'Alpha'])
     scaled_df = preprocessing.scale(df) #if column samples, pass in df.T
 
     pca = PCA()
@@ -365,14 +365,14 @@ def analyze_alpha_all():
     import pandas as pd
     from engine import create_engine
     engine = create_engine()
-    run = pd.read_sql(f"SELECT run_id FROM wfo_run ORDER BY run_id ASC;", engine)
+    run = pd.read_sql(f'SELECT run_id FROM wfo_run ORDER BY run_id ASC;', engine)
 
     for run_id in run['run_id']:
         cumulative_values, _, _ = rebuild_performance(run_id)
         engine = create_engine()
-        df = connect_time_series(engine, "test_data")
-        spx = df["SPX Close"]
-        rf = df["RF Rate"]
+        df = connect_time_series(engine, 'test_data')
+        spx = df['SPX Close']
+        rf = df['RF Rate']
         
         # cumulative_values = cumulative_values.pct_change()
         # benchmark = spx.pct_change()
@@ -380,20 +380,20 @@ def analyze_alpha_all():
         # beta = cumulative_values.cov(benchmark)/benchmark.var()
         # alpha = cumulative_values.mean() - (beta * (benchmark.mean()))
         res = capm_alpha_beta(cumulative_values, spx, rf, periods_per_year=252)
-        print(f"run {run_id}: beta={res['beta']:.2f}, alpha_ann={res['alpha_ann']:.2%}")
+        print(f'run {run_id}: beta={res['beta']:.2f}, alpha_ann={res['alpha_ann']:.2%}')
 
 def analyze_probability_of_outperformance(run_ids):
     import pandas as pd
     from backtest import run, Params
     
     engine = create_engine()
-    df = connect_time_series(engine, "test_data")
+    df = connect_time_series(engine, 'test_data')
     
-    runs = pd.read_sql(f"SELECT * FROM wfo_run WHERE run_id IN ({', '.join(str(x) for x in run_ids)})", engine)
+    runs = pd.read_sql(f'SELECT * FROM wfo_run WHERE run_id IN ({', '.join(str(x) for x in run_ids)})', engine)
     results = []
     for cur_run in runs.itertuples(index=False):
-        periods = pd.read_sql(f"SELECT * FROM wfo_period_summary WHERE run_id = {cur_run.run_id}", engine)
-        strategies = connect(engine, "wfo_strategy")
+        periods = pd.read_sql(f'SELECT * FROM wfo_period_summary WHERE run_id = {cur_run.run_id}', engine)
+        strategies = connect(engine, 'wfo_strategy')
         strategies = (
             strategies
             [strategies['run_id'] == cur_run.run_id]
@@ -401,7 +401,7 @@ def analyze_probability_of_outperformance(run_ids):
             .reset_index(drop=True)
         )    
         
-        # print(f"length of strategies: {len(strategies)}")
+        # print(f'length of strategies: {len(strategies)}')
         start_date = pd.to_datetime(cur_run.start_date)
         end_date = pd.to_datetime(cur_run.end_date)
 
@@ -414,8 +414,8 @@ def analyze_probability_of_outperformance(run_ids):
         # for col in ['pos_sizing', 'fitness_values']:
         #     strategies[col] = strategies[col].apply(lambda x: [round(v, 2) for v in x])
 
-        df = connect_time_series(engine, "test_data")
-        spx_after_date = df["SPX Close"][backtest_start_date:].iloc[0]
+        df = connect_time_series(engine, 'test_data')
+        spx_after_date = df['SPX Close'][backtest_start_date:].iloc[0]
 
         current_portfolio_value = spx_after_date
             
@@ -439,11 +439,11 @@ def analyze_probability_of_outperformance(run_ids):
             period_ensemble_params = []
             for i in range(0,len(period_strategies)):
                 period_ensemble_params.append(Params(
-                    window=int(period_strategies["window"].iloc[i]),
-                    entry=int(period_strategies["entry"].iloc[i]),
-                    exit=int(period_strategies["exit"].iloc[i]),
-                    sell_threshold=int(period_strategies["sell_threshold"].iloc[i]),
-                    position_sizing=np.array([float(x) for x in period_strategies["pos_sizing"].iloc[i]])
+                    window=int(period_strategies['window'].iloc[i]),
+                    entry=int(period_strategies['entry'].iloc[i]),
+                    exit=int(period_strategies['exit'].iloc[i]),
+                    sell_threshold=int(period_strategies['sell_threshold'].iloc[i]),
+                    position_sizing=np.array([float(x) for x in period_strategies['pos_sizing'].iloc[i]])
                 ))
             
             initial_capital_per_strategy = current_portfolio_value/len(period_ensemble_params)
@@ -453,12 +453,12 @@ def analyze_probability_of_outperformance(run_ids):
                     initial_capital_per_strategy, leverage)
             
             combined_performance = pfs.value().sum(axis=1)
-            spx = df["SPX Close"][period_start_date:period_end_date]
-            rf = df["RF Rate"][period_start_date:period_end_date]
+            spx = df['SPX Close'][period_start_date:period_end_date]
+            rf = df['RF Rate'][period_start_date:period_end_date]
             
-            # print(f" date range of combined_performance is {combined_performance.index[0]} to {combined_performance.index[-1]}")
-            # print(f" date range of spx is {spx.index[0]} to {spx.index[-1]}")
-            # print(f" date range of rf is {rf.index[0]} to {rf.index[-1]}")
+            # print(f' date range of combined_performance is {combined_performance.index[0]} to {combined_performance.index[-1]}')
+            # print(f' date range of spx is {spx.index[0]} to {spx.index[-1]}')
+            # print(f' date range of rf is {rf.index[0]} to {rf.index[-1]}')
             res = capm_alpha_beta(combined_performance, spx, rf, periods_per_year=252)
             results.append(res)        
             
@@ -474,7 +474,7 @@ def analyze_probability_of_outperformance(run_ids):
             negative_count += 1 
             worst = min(worst, res['alpha_ann'])
             
-    print(f"a total of {negative_count} periods out of {len(results)} were negative, with the worst being {worst}")
+    print(f'a total of {negative_count} periods out of {len(results)} were negative, with the worst being {worst}')
     
     
 def analyse_gameplan(run_ids):
@@ -484,14 +484,14 @@ def analyse_gameplan(run_ids):
     engine = create_engine()
     
     results = []
-    strategies = connect(engine, "wfo_strategy")
-    results = strategies.loc[strategies["run_id"].isin(run_ids), "pos_sizing"].str[0].to_numpy()
+    strategies = connect(engine, 'wfo_strategy')
+    results = strategies.loc[strategies['run_id'].isin(run_ids), 'pos_sizing'].str[0].to_numpy()
         
     mean = np.mean(results)
     median = np.median(results)
     max = np.max(results)
-    print(f"median base holdings is {median} while mean is {mean}")
-    print(f"max is {max}")
+    print(f'median base holdings is {median} while mean is {mean}')
+    print(f'max is {max}')
 
 def analyse_rsi(run_ids):
     import pandas as pd
@@ -500,14 +500,14 @@ def analyse_rsi(run_ids):
     engine = create_engine()
     
     results = []
-    strategies = connect(engine, "wfo_strategy")
-    results = strategies.loc[strategies["run_id"].isin(run_ids), ["window", "entry", "exit"]]
-    window = results["window"]
-    entry = results["entry"]
-    exit = results["exit"]
+    strategies = connect(engine, 'wfo_strategy')
+    results = strategies.loc[strategies['run_id'].isin(run_ids), ['window', 'entry', 'exit']]
+    window = results['window']
+    entry = results['entry']
+    exit = results['exit']
     window_mid = np.median(window)
     entry_mid = np.median(entry)
     exit_mid = np.median(exit)
-    print(f"window_mid is {window_mid}")
-    print(f"entry_mid is {entry_mid}")
-    print(f"exit_mid is {exit_mid}")
+    print(f'window_mid is {window_mid}')
+    print(f'entry_mid is {entry_mid}')
+    print(f'exit_mid is {exit_mid}')

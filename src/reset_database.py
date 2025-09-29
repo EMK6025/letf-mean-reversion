@@ -20,10 +20,10 @@ def repopulate_test_data():
     # find actual stock values from daily % changes
     populate_letf.main()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     repopulate_test_data()
     engine = create_engine()
-    df = connect_time_series(engine, "test_data")
+    df = connect_time_series(engine, 'test_data')
     with pd.option_context('display.max_columns', None):
-        print("\n>>> Random 10-row sample:\n")
+        print('\n>>> Random 10-row sample:\n')
         print(df.sample(10))

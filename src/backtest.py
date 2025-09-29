@@ -16,13 +16,13 @@ class Params:
         arr = np.asarray(self.position_sizing, dtype=float)
         if arr.shape != (11,):
             raise ValueError(
-                f"position_sizing must have 11 elements (1 base value and 10 entries), not {arr.shape}"
+                f'position_sizing must have 11 elements (1 base value and 10 entries), not {arr.shape}'
             )
         self.position_sizing = arr
 
 engine = create_engine()
-df = connect_time_series(engine, "test_data")
-price = df["SPX Close"]
+df = connect_time_series(engine, 'test_data')
+price = df['SPX Close']
 window_range = np.arange(3, 21)
 rsi = RSI.run(price, window=window_range, ewm=True)
 
@@ -111,13 +111,13 @@ indicator = IndicatorFactory(
     }
 )
 
-"""
+'''
 eval determines if uninvested cash is put into short term bonds or not.
 defaults to false as those gains should not be optimized for during backtests.
-"""
+'''
 def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, leverage=3, eval=False):    
     leverage = int(np.clip(round(leverage), 1, 4))
-    letf = df["SPXTR Close"] if leverage == 1 else df[f"{leverage}x LETF"] 
+    letf = df['SPXTR Close'] if leverage == 1 else df[f'{leverage}x LETF'] 
     
     # prevent bugs down the line with a portfolio that just does nothing past available data
     if type(end_date) == str:
@@ -137,7 +137,7 @@ def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, le
     sell_thresholds = np.array([param.sell_threshold for param in params])
     
     letf = letf.loc[start_date:end_date]
-    price = df["SPX Close"].loc[start_date:end_date]
+    price = df['SPX Close'].loc[start_date:end_date]
     
     entry_mask = rsi_data < entries
     exit_mask = rsi_data > exits
@@ -166,7 +166,7 @@ def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, le
     orders = pd.DataFrame(
         target_pct,
         index=price.index,
-        columns=[f"param_{i}" for i in range(target_pct.shape[1])]
+        columns=[f'param_{i}' for i in range(target_pct.shape[1])]
     )
     mask = orders.eq(orders.shift(axis=0))
     orders_masked = orders.mask(mask)
@@ -187,7 +187,7 @@ def run(params, start_date, end_date, stop_entry_date, initial_capital=10000, le
     if not eval:
         return pfs
     
-    rf = df["RF Rate"].reindex(pfs.value().index).ffill()
+    rf = df['RF Rate'].reindex(pfs.value().index).ffill()
     
     # convert percentage to decimal
     rf = rf / 100.0

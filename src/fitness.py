@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from typing import List, Dict
 import pandas as pd
 
-warnings.filterwarnings("ignore", category=FutureWarning, module='vectorbt')
+warnings.filterwarnings('ignore', category=FutureWarning, module='vectorbt')
 vbt.settings.array_wrapper['freq'] = '1D'
 
 @dataclass
 class FitnessConfig:
-    """Configuration for fitness function metrics and weights"""
+    '''Configuration for fitness function metrics and weights'''
     
     # metric_name: (weight, minimize boolean, reference point)
     available_metrics = {
@@ -47,7 +47,7 @@ class FitnessConfig:
         # valid metrics check
         invalid_metrics = set(self.selected_metrics) - set(self.available_metrics.keys())
         if invalid_metrics:
-            raise ValueError(f"Invalid metrics selected: {invalid_metrics}")
+            raise ValueError(f'Invalid metrics selected: {invalid_metrics}')
     
     def get_weights(self) -> List[float]:
         weights = []
@@ -65,11 +65,11 @@ class FitnessConfig:
         return len(self.selected_metrics)
 
 def calc_metrics(pfs: vbt.Portfolio, benchmark: vbt.Portfolio, rf: pd.Series, params: List):
-    """
+    '''
     calculate all available metrics
     input: backtested performances, benchmark performance, risk-free rate, and the input params for the backtest
     output: metrics dict
-    """
+    '''
     returns = pfs.returns()
     benchmark_returns = benchmark.returns()
     
@@ -124,9 +124,9 @@ def calc_metrics(pfs: vbt.Portfolio, benchmark: vbt.Portfolio, rf: pd.Series, pa
     return metrics
 
 def fitness(metrics_dict, config: FitnessConfig):
-    """
+    '''
     Flexible fitness function that works with configurable metrics
-    """
+    '''
     # Apply rel_drawdown clipping if it's selected
     if 'rel_drawdown' in metrics_dict:
         metrics_dict['rel_drawdown'] = metrics_dict['rel_drawdown'].clip(lower=0.4)
@@ -135,7 +135,7 @@ def fitness(metrics_dict, config: FitnessConfig):
     selected_data = {}
     for metric in config.selected_metrics:
         if metric not in metrics_dict:
-            raise ValueError(f"Metric '{metric}' not found in calculated metrics")
+            raise ValueError(f'Metric "{metric}" not found in calculated metrics')
         selected_data[metric] = metrics_dict[metric]
     
     # Convert to numpy arrays

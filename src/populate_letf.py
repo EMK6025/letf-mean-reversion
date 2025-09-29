@@ -11,12 +11,12 @@ def theoretical_return(p_series: Series, start_val):
 
 def main():
     engine = create_engine()
-    df = connect_time_series(engine, "test_data")
+    df = connect_time_series(engine, 'test_data')
     
-    start_val = df["SPX Close"].iloc[0]
-    df["2x LETF"] = theoretical_return(df["2x LETF Change"], start_val)
-    df["3x LETF"] = theoretical_return(df["3x LETF Change"], start_val)
-    df["4x LETF"] = theoretical_return(df["4x LETF Change"], start_val)
+    start_val = df['SPX Close'].iloc[0]
+    df['2x LETF'] = theoretical_return(df['2x LETF Change'], start_val)
+    df['3x LETF'] = theoretical_return(df['3x LETF Change'], start_val)
+    df['4x LETF'] = theoretical_return(df['4x LETF Change'], start_val)
     
     df.reset_index(inplace=True)
-    update_sql_table(df, engine, "LETF")
+    update_sql_table(df, engine, 'LETF')

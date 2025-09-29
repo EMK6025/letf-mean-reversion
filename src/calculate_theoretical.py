@@ -9,7 +9,7 @@ from sql_functions import update_sql_table
 FEE = [0, 0, 0.89/100/252, 0.91/100/252, 0.93/100/252]
 
 def theoretical_change(df, X):
-    return df["SPXTR Change"]*X - df["RF Rate"]*(X-1) - FEE[X]
+    return df['SPXTR Change']*X - df['RF Rate']*(X-1) - FEE[X]
 
 seed = 2025
 random.seed(seed)
@@ -20,26 +20,26 @@ def main():
     # grab SSO
     sso = pd.read_csv('SSO-historical_nav.csv', usecols=['Date', 'NAV Change (%)'])
     sso = sso.rename(columns={
-        "NAV Change (%)": "2x LETF Change"
+        'NAV Change (%)': '2x LETF Change'
     })
-    sso["Date"] = pd.to_datetime(sso["Date"])
+    sso['Date'] = pd.to_datetime(sso['Date'])
     sso['2x LETF Change'] = sso['2x LETF Change'].astype(float)
-    sso.set_index("Date", inplace=True)
+    sso.set_index('Date', inplace=True)
     sso.sort_index(inplace=True)
     
     # grab UPRO
     upro = pd.read_csv('UPRO-historical_nav.csv', usecols=['Date', 'NAV Change (%)'])
     upro = upro.rename(columns={
-        "NAV Change (%)": "3x LETF Change"
+        'NAV Change (%)': '3x LETF Change'
     })
-    upro["Date"] = pd.to_datetime(upro["Date"])
+    upro['Date'] = pd.to_datetime(upro['Date'])
     upro['3x LETF Change'] = upro['3x LETF Change'].astype(float)
-    upro.set_index("Date", inplace=True)
+    upro.set_index('Date', inplace=True)
     upro.sort_index(inplace=True)
 
 
     engine = create_engine()
-    df = connect_time_series(engine, "test_data")
+    df = connect_time_series(engine, 'test_data')
     
     df['2x LETF Change'] = theoretical_change(df, 2)
     df['3x LETF Change'] = theoretical_change(df, 3)
@@ -50,7 +50,7 @@ def main():
     
     # match up time series
     start = sso.index[0] + pd.DateOffset(days=1)
-    end   = pd.to_datetime("2024-12-31")
+    end   = pd.to_datetime('2024-12-31')
     naive_est_sso = naive_est_sso[start:end]
     sso = sso[start:end]
     
@@ -83,13 +83,13 @@ def main():
     
     # mean_error = sim_error_2x.mean()
     # std_error  = sim_error_2x.std()
-    # print(f"student's t estimation for SSO")
-    # print(f"Mean error: {mean_error:.4f},  Std dev: {std_error:.4f}")    
+    # print(f'student's t estimation for SSO')
+    # print(f'Mean error: {mean_error:.4f},  Std dev: {std_error:.4f}')    
     
     # mean_error = sim_error_3x.mean()
     # std_error  = sim_error_3x.std()
-    # print(f"student's t estimation for UPRO")
-    # print(f"Mean error: {mean_error:.4f},  Std dev: {std_error:.4f}")   
+    # print(f'student's t estimation for UPRO')
+    # print(f'Mean error: {mean_error:.4f},  Std dev: {std_error:.4f}')   
     
     np_random_resid_2x = np.random.choice(first_layer_resid_2x_centered.values,
                             size=df.shape[0],
@@ -107,13 +107,13 @@ def main():
     
     # mean_error = np_random_error_2x.mean()
     # std_error  = np_random_error_2x.std()
-    # print(f"np random estimation for SSO")
-    # print(f"Mean error: {mean_error:.4f},  Std dev: {std_error:.4f}")    
+    # print(f'np random estimation for SSO')
+    # print(f'Mean error: {mean_error:.4f},  Std dev: {std_error:.4f}')    
     
     # mean_error = np_random_error_3x.mean()
     # std_error  = np_random_error_3x.std()
-    # print(f"np random estimation for UPRO")
-    # print(f"Mean error: {mean_error:.4f},  Std dev: {std_error:.4f}")   
+    # print(f'np random estimation for UPRO')
+    # print(f'Mean error: {mean_error:.4f},  Std dev: {std_error:.4f}')   
     df['2x LETF Change'] += np_random_resid_2x
     df['3x LETF Change'] += np_random_resid_3x
     df['4x LETF Change'] += np_random_resid_3x + bias_3x - bias_2x
@@ -123,7 +123,7 @@ def main():
     
     # made Date useable
     df.reset_index(inplace=True)  
-    update_sql_table(df, engine, "LETF Change", table_name="test_data")
+    update_sql_table(df, engine, 'LETF Change', table_name='test_data')
     
     # import matplotlib.pyplot as plt
 
