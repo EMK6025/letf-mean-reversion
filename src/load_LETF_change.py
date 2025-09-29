@@ -1,6 +1,6 @@
 import pandas as pd
 from engine import create_engine, connect_time_series
-from populate_letf import theoretical_return
+from load_LETFs import theoretical_return
 import numpy as np
 import random
 from sql_functions import update_sql_table
@@ -24,8 +24,8 @@ def main():
     })
     sso['Date'] = pd.to_datetime(sso['Date'])
     sso['2x LETF Change'] = sso['2x LETF Change'].astype(float)
-    sso.set_index('Date', inplace=True)
-    sso.sort_index(inplace=True)
+    sso.set_index('Date')
+    sso.sort_index()
     
     # grab UPRO
     upro = pd.read_csv('UPRO-historical_nav.csv', usecols=['Date', 'NAV Change (%)'])
@@ -34,8 +34,8 @@ def main():
     })
     upro['Date'] = pd.to_datetime(upro['Date'])
     upro['3x LETF Change'] = upro['3x LETF Change'].astype(float)
-    upro.set_index('Date', inplace=True)
-    upro.sort_index(inplace=True)
+    upro.set_index('Date')
+    upro.sort_index()
 
 
     engine = create_engine()
@@ -122,7 +122,7 @@ def main():
     df.loc[upro.index, '3x LETF Change'] = upro['3x LETF Change']
     
     # made Date useable
-    df.reset_index(inplace=True)  
+    df.reset_index()  
     update_sql_table(df, engine, 'LETF Change', table_name='test_data')
     
     # import matplotlib.pyplot as plt

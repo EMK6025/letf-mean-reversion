@@ -4,35 +4,68 @@ from engine import create_engine
 from pathlib import Path
 
 def main():
+    # define paths
     proj_path = Path(__file__).resolve().parent.parent
     spx_path = proj_path / 'SPX-data.csv'
     spxtr_path = proj_path / 'SPXTR-data.csv'
     rf_path = proj_path / 'F-F_Research_Data_Factors_daily.csv'
+    sso_path = proj_path / 'SSO-historical_nav.csv'
+    upro_path = proj_path / 'UPRO-historical_nav.csv'
     
+    
+    # load data
     spx = pd.read_csv(spx_path, usecols=['Date', 'SPX Close'])
     spxtr = pd.read_csv(spxtr_path, usecols=['Date', 'SPXTR Close'])
     rf = pd.read_csv(rf_path, usecols=['Date', 'RF Rate'])
     
+    
+    # process spx, spxtr, and rf
     spx['Date'] = pd.to_datetime(spx['Date'], dayfirst=False).dt.date
     spx['SPX Close'] = spx['SPX Close'].astype(float)
-    spx = spx.sort_values('Date')
+    spx = spx.set_index('Date').sort_index()
     
     spxtr['Date'] = pd.to_datetime(spxtr['Date'], dayfirst=False).dt.date
     spxtr['SPXTR Close'] = spxtr['SPXTR Close'].astype(float)
-    spxtr = spxtr.sort_values('Date')
+    spxtr = spxtr.set_index('Date').sort_index()
 
     rf['Date'] = pd.to_datetime(rf['Date'], dayfirst=False).dt.date
     rf['RF Rate'] = rf['RF Rate'].astype(float)
-    rf = rf.sort_values('Date')
+    rf = rf.set_index('Date').sort_index()
     
-    spx = spx.set_index('Date')
-    spxtr = spxtr.set_index('Date')
-    rf = rf.set_index('Date')
     
-
+    # store data
     combined = spx.join([spxtr, rf], how='inner')
     combined = combined.reset_index()
     combined.to_csv(proj_path / 'combined-data.csv', index=False)
+
+
+    # grab and process sso
+    sso = pd.read_csv(sso_path, usecols=['Date', 'NAV Change (%)'])
+    sso = sso.rename(columns={
+        'NAV Change (%)': '2x LETF Change'
+    })
+    sso['Date'] = pd.to_datetime(sso['Date'])
+    sso['2x LETF Change'] = sso['2x LETF Change'].astype(float)
+    sso = sso.set_index('Date')
+
+
+    # grab and process upro
+    upro = pd.read_csv(upro_path, usecols=['Date', 'NAV Change (%)'])
+    upro = upro.rename(columns={
+        'NAV Change (%)': '3x LETF Change'
+    })
+    upro['Date'] = pd.to_datetime(upro['Date'])
+    upro['3x LETF Change'] = upro['3x LETF Change'].astype(float)
+    upro = upro.set_index('Date').sort_index()
+    
+    
+    # store data
+    combined = sso.join(upro, how='inner')
+    combined = combined.reset_index()
+    
+    combined.to_csv(proj_path / 'LETF-data.csv', index=False)
+
+    
 
 if __name__ == '__main__':
     main()
