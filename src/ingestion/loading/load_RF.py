@@ -8,7 +8,7 @@ def main():
     engine = create_engine()
     proj_path = Path(__file__).resolve().parent.parent 
     
-    csv_path = proj_path / 'combined-data.csv'
+    csv_path = proj_path / 'combined_data.csv'
     df = pd.read_csv(csv_path, usecols=['Date', 'RF Rate'])
 
     df['Date'] = pd.to_datetime(df['Date'], format='%Y%m%d').dt.date

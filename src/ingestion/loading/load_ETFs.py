@@ -8,7 +8,7 @@ def main():
     engine = create_engine()
     proj_path = Path(__file__).resolve().parent.parent 
     
-    csv_path = proj_path / 'combined-data.csv'
+    csv_path = proj_path / 'combined_data.csv'
     
     spx = pd.read_csv(csv_path, usecols=['Date', 'SPX Close'])
     spxtr = pd.read_csv(csv_path, usecols=['Date', 'SPXTR Close'])
