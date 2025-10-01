@@ -360,16 +360,16 @@ def analyze_alpha_all():
 
     engine = create_engine()
     runs = pd.read_sql('SELECT * FROM wfo_run ORDER BY run_id ASC;', engine)
+
+    df = connect_time_series(engine, 'test_data')
+    spx = df['SPX Close']
+    rf = df['RF Rate']
+        
     results = []
 
     for i, run in runs.iterrows():
         run_id = run.loc['run_id']
         cumulative_values, _, _ = rebuild_performance(run_id)
-
-        engine = create_engine()
-        df = connect_time_series(engine, 'test_data')
-        spx = df['SPX Close']
-        rf = df['RF Rate']
 
         res = capm_alpha_beta(cumulative_values, spx, rf, periods_per_year=252)
 
@@ -378,14 +378,15 @@ def analyze_alpha_all():
         # thus I'm saving run index instead of run_id
         print(f'run {i}: beta={res["beta"]:.2f}, alpha_ann={res["alpha_ann"]:.2%}')
         results.append({
-            'run': i,           
-            'beta': res['beta'],
-            'alpha_ann': res['alpha_ann']
+            'run': i,
+            'beta': f'{res["beta"]:.5f}',
+            'alpha_ann': f'{res["alpha_ann"]:.5%}'
         })
+
     
     results_df = pd.DataFrame(results)
     
-    csv_path = Path(__file__).resolve().parent.parent + 'backtest_results.csv'
+    csv_path = Path(__file__).resolve().parent.parent / 'backtest_results.csv'
 
     results_df.to_csv(csv_path, index=False)
 
@@ -508,3 +509,13 @@ def analyse_rsi(run_ids):
     print(f'window_mid is {window_mid}')
     print(f'entry_mid is {entry_mid}')
     print(f'exit_mid is {exit_mid}')
+    
+def analyze():
+    from pathlib import Path
+
+    engine = create_engine()
+    proj_path = Path(__file__).resolve().parent.parent 
+    
+    csv_path = proj_path / 'backtest_results.csv'
+    
+    spx = pd.read_csv(csv_path, usecols=['Date', 'SPX Close'])
