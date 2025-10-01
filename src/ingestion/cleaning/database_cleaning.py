@@ -34,7 +34,7 @@ def main():
     # store data
     combined = spx.join([spxtr, rf], how='inner')
     combined = combined.reset_index()
-    combined.to_csv(proj_path / 'combined-data.csv', index=False)
+    combined.to_csv(proj_path / 'combined_data.csv', index=False)
 
 
     # grab and process sso
@@ -61,7 +61,7 @@ def main():
     combined = sso.join(upro, how='inner')
     combined = combined.reset_index()
     
-    combined.to_csv(proj_path / 'LETF-data.csv', index=False)
+    combined.to_csv(proj_path / 'LETF_data.csv', index=False)
 
     
 

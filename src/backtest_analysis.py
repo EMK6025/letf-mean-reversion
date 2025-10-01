@@ -195,10 +195,8 @@ def analyze_wfo(run_id):
     plt.savefig('wfo_analysis.png', dpi=300)
     plt.show()
 
-
 def analyze_PCA(run_id):
     from sklearn.decomposition import PCA
-
     from sklearn import preprocessing
     
     engine = create_engine()
@@ -261,8 +259,6 @@ def analyze_PCA(run_id):
     # print(pca.components_)
     
 def analyze_fit():
-    import pandas as pd
-    from engine import create_engine, connect
     import matplotlib.pyplot as plt
     engine = create_engine()
     run_ids = pd.read_sql(f'SELECT * FROM wfo_run ORDER BY run_id ASC;', engine)
@@ -317,11 +313,9 @@ def capm_alpha_beta(strategy_prices: pd.Series,
                         periods_per_year: int = 252,
                         nw_lags: int = 5):
     
-    import pandas as pd
     import statsmodels.api as sm
 
     # simple returns
-    
     overlap = bench_prices.index.intersection(strategy_prices.index).intersection(rf.index)
     
     bench_prices = bench_prices.loc[overlap]
@@ -362,34 +356,46 @@ def capm_alpha_beta(strategy_prices: pd.Series,
     }
 
 def analyze_alpha_all():
-    import pandas as pd
-    from engine import create_engine
-    engine = create_engine()
-    run = pd.read_sql(f'SELECT run_id FROM wfo_run ORDER BY run_id ASC;', engine)
+    from pathlib import Path
 
-    for run_id in run['run_id']:
+    engine = create_engine()
+    runs = pd.read_sql('SELECT * FROM wfo_run ORDER BY run_id ASC;', engine)
+    results = []
+
+    for i, run in runs.iterrows():
+        run_id = run.loc['run_id']
         cumulative_values, _, _ = rebuild_performance(run_id)
+
         engine = create_engine()
         df = connect_time_series(engine, 'test_data')
         spx = df['SPX Close']
         rf = df['RF Rate']
-        
-        # cumulative_values = cumulative_values.pct_change()
-        # benchmark = spx.pct_change()
 
-        # beta = cumulative_values.cov(benchmark)/benchmark.var()
-        # alpha = cumulative_values.mean() - (beta * (benchmark.mean()))
         res = capm_alpha_beta(cumulative_values, spx, rf, periods_per_year=252)
-        print(f'run {run_id}: beta={res['beta']:.2f}, alpha_ann={res['alpha_ann']:.2%}')
+
+        # run_id and run index are different because my computer crashes
+        # sometimes while running backtests, so I have to redo. 
+        # thus I'm saving run index instead of run_id
+        print(f'run {i}: beta={res["beta"]:.2f}, alpha_ann={res["alpha_ann"]:.2%}')
+        results.append({
+            'run': i,           
+            'beta': res['beta'],
+            'alpha_ann': res['alpha_ann']
+        })
+    
+    results_df = pd.DataFrame(results)
+    
+    csv_path = Path(__file__).resolve().parent.parent + 'backtest_results.csv'
+
+    results_df.to_csv(csv_path, index=False)
 
 def analyze_probability_of_outperformance(run_ids):
-    import pandas as pd
     from backtest import run, Params
     
     engine = create_engine()
     df = connect_time_series(engine, 'test_data')
     
-    runs = pd.read_sql(f'SELECT * FROM wfo_run WHERE run_id IN ({', '.join(str(x) for x in run_ids)})', engine)
+    runs = pd.read_sql(f'SELECT * FROM wfo_run WHERE run_id IN ({", ".join(str(x) for x in run_ids)})', engine)
     results = []
     for cur_run in runs.itertuples(index=False):
         periods = pd.read_sql(f'SELECT * FROM wfo_period_summary WHERE run_id = {cur_run.run_id}', engine)
@@ -401,7 +407,6 @@ def analyze_probability_of_outperformance(run_ids):
             .reset_index(drop=True)
         )    
         
-        # print(f'length of strategies: {len(strategies)}')
         start_date = pd.to_datetime(cur_run.start_date)
         end_date = pd.to_datetime(cur_run.end_date)
 
@@ -456,9 +461,6 @@ def analyze_probability_of_outperformance(run_ids):
             spx = df['SPX Close'][period_start_date:period_end_date]
             rf = df['RF Rate'][period_start_date:period_end_date]
             
-            # print(f' date range of combined_performance is {combined_performance.index[0]} to {combined_performance.index[-1]}')
-            # print(f' date range of spx is {spx.index[0]} to {spx.index[-1]}')
-            # print(f' date range of rf is {rf.index[0]} to {rf.index[-1]}')
             res = capm_alpha_beta(combined_performance, spx, rf, periods_per_year=252)
             results.append(res)        
             
@@ -475,12 +477,9 @@ def analyze_probability_of_outperformance(run_ids):
             worst = min(worst, res['alpha_ann'])
             
     print(f'a total of {negative_count} periods out of {len(results)} were negative, with the worst being {worst}')
-    
-    
+       
 def analyse_gameplan(run_ids):
-    import pandas as pd
-    import numpy as np
-    
+
     engine = create_engine()
     
     results = []
@@ -494,8 +493,6 @@ def analyse_gameplan(run_ids):
     print(f'max is {max}')
 
 def analyse_rsi(run_ids):
-    import pandas as pd
-    import numpy as np
     
     engine = create_engine()
     
