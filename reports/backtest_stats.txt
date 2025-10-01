@@ -1,0 +1,4 @@
+beta - mean: 0.87, std:  0.04
+alpha - mean: 2.33%, std:  0.92%
+t-statistic: 12.688458134838024
+p-value: 2.1524523545185948e-12

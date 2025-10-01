@@ -512,10 +512,22 @@ def analyse_rsi(run_ids):
     
 def analyze():
     from pathlib import Path
+    from scipy import stats
 
-    engine = create_engine()
     proj_path = Path(__file__).resolve().parent.parent 
     
     csv_path = proj_path / 'backtest_results.csv'
     
-    spx = pd.read_csv(csv_path, usecols=['Date', 'SPX Close'])
+    results = pd.read_csv(csv_path, usecols=['run', 'beta', 'alpha_ann'])
+    results['beta'] = results['beta'].astype(float)
+    results['alpha_ann'] = results['alpha_ann'].str[:-1].astype(float)
+    print(f'beta - mean: {np.mean(results["beta"]):.2f}, std:  {np.std(results["beta"]):.2f}')
+    print(f'alpha - mean: {np.mean(results["alpha_ann"]):.2f}%, std:  {np.std(results["alpha_ann"]):.2f}%')
+    
+
+    t_stat, p_val = stats.ttest_1samp(results['alpha_ann'], 0)
+
+    print("t-statistic:", t_stat)
+    print("p-value:", p_val)
+    
+analyze()
