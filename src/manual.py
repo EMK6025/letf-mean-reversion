@@ -12,7 +12,7 @@ def wfo():
         enable_bottom_percentile_filter=True,
         bottom_percentile=10.0
     )
-
+    
     try:
         walk_forward_optimization(
             start_date=start_date,
@@ -26,68 +26,11 @@ def wfo():
             n_ensemble=50,
             leverage=3,
             fitness_config=custom_config,
-            rand_seed = 1010
+            rand_seed = 1013
         )
     except Exception as e:
-        print('fail 2')
+        print('Something when wrong, go fix.')
         traceback.print_exc()
-        
-    # try:
-    #     walk_forward_optimization(
-    #         start_date=start_date,
-    #         end_date=end_date,  
-    #         in_sample_months=60,
-    #         out_sample_months=6,
-    #         max_time_minutes=1000,
-    #         stall_generations=10,
-    #         max_generations=1000,
-    #         pop_size=1000,
-    #         n_ensemble=50,
-    #         leverage=3,
-    #         fitness_config=custom_config,
-    #         rand_seed = 1011
-    #     )
-    # except Exception as e:
-    #     print('fail 3')
-    #     traceback.print_exc()
-    
-    # try:
-    #     walk_forward_optimization(
-    #         start_date=start_date,
-    #         end_date=end_date,  
-    #         in_sample_months=60,
-    #         out_sample_months=6,
-    #         max_time_minutes=1000,
-    #         stall_generations=10,
-    #         max_generations=1000,
-    #         pop_size=1000,
-    #         n_ensemble=50,
-    #         leverage=3,
-    #         fitness_config=custom_config,
-    #         rand_seed = 1012
-    #     )
-    # except Exception as e:
-    #     print('fail 3')
-    #     traceback.print_exc()
-    
-    # try:
-    #     walk_forward_optimization(
-    #         start_date=start_date,
-    #         end_date=end_date,  
-    #         in_sample_months=60,
-    #         out_sample_months=6,
-    #         max_time_minutes=1000,
-    #         stall_generations=10,
-    #         max_generations=1000,
-    #         pop_size=1000,
-    #         n_ensemble=50,
-    #         leverage=3,
-    #         fitness_config=custom_config,
-    #         rand_seed = 1013
-    #     )
-    # except Exception as e:
-    #     print('fail 1')
-    #     traceback.print_exc()
     
 def PCA(run_index):
     from backtest_analysis import analyze_PCA
@@ -138,15 +81,18 @@ if __name__ == '__main__':
     #     'display.width', None,
     #     'display.max_colwidth', None
     # ):
-    #     run = pd.read_sql(f'SELECT * FROM wfo_run WHERE run_id = 23;', engine)
-    #     print(run)
+    #     run = pd.read_sql(f'SELECT * FROM wfo_strategy WHERE run_id = 57 ORDER BY pos_sizing DESC;', engine)
+    #     print(run.head())
 
-    # alpha_all()
+    alpha_all()
+    from backtest_analysis import analyze
+    analyze()
+    
     # x = [35, 36, 37, 38, 40, 41, 43, 44, 45]
     # from backtest_analysis import analyse_rsi
     # analyse_rsi(x)
     # from backtest_analysis import analyze_probability_of_outperformance
     # analyze_probability_of_outperformance(x)
-    wfo()
-    # clear_runs([62])
+    # wfo()
+    # clear_runs([59])
     # list_runs()

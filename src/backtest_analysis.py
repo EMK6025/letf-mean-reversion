@@ -529,5 +529,3 @@ def analyze():
 
     print("t-statistic:", t_stat)
     print("p-value:", p_val)
-    
-analyze()

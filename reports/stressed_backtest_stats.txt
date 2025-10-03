@@ -1,0 +1,6 @@
+beta - mean: 0.86, std:  0.04
+alpha - mean: 1.03%, std:  0.91%
+t-statistic: 5.564866117638291
+p-value: 1.0022905178916646e-05
+
+slippage = .6% RT per trade
