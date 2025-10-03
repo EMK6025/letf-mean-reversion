@@ -67,32 +67,9 @@ def alpha_all():
     from backtest_analysis import analyze_alpha_all
     analyze_alpha_all()
 
-def alpha():
+def alpha(run_ids):
     from backtest_analysis import analyze_probability_of_outperformance
-    analyze_probability_of_outperformance()
+    analyze_probability_of_outperformance(run_ids)
     
 if __name__ == '__main__':
-    # import pandas as pd
-    # from engine import create_engine
-    # engine = create_engine()
-    # with pd.option_context(
-    #     'display.max_rows', None,
-    #     'display.max_columns', None,
-    #     'display.width', None,
-    #     'display.max_colwidth', None
-    # ):
-    #     run = pd.read_sql(f'SELECT * FROM wfo_strategy WHERE run_id = 57 ORDER BY pos_sizing DESC;', engine)
-    #     print(run.head())
-
     alpha_all()
-    from backtest_analysis import analyze
-    analyze()
-    
-    # x = [35, 36, 37, 38, 40, 41, 43, 44, 45]
-    # from backtest_analysis import analyse_rsi
-    # analyse_rsi(x)
-    # from backtest_analysis import analyze_probability_of_outperformance
-    # analyze_probability_of_outperformance(x)
-    # wfo()
-    # clear_runs([59])
-    # list_runs()
