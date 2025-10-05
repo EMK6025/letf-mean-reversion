@@ -510,13 +510,13 @@ def analyse_rsi(run_ids):
     print(f'entry_mid is {entry_mid}')
     print(f'exit_mid is {exit_mid}')
     
-def analyze():
+def analyze(csv_file):
     from pathlib import Path
     from scipy import stats
 
     proj_path = Path(__file__).resolve().parent.parent 
     
-    csv_path = proj_path / 'backtest_results.csv'
+    csv_path = proj_path / 'reports' / csv_file
     
     results = pd.read_csv(csv_path, usecols=['run', 'beta', 'alpha_ann'])
     results['beta'] = results['beta'].astype(float)
