@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from vectorbt import Portfolio
 from engine import create_engine, connect, connect_time_series
 from vectorbt import settings
+from sqlalchemy import text
+
 settings.array_wrapper['freq'] = '1D'
 
 def rebuild_performance(run_id):
@@ -153,28 +155,23 @@ def analyze_wfo(run_id):
     print(f'Benchmark Sharpe Ratio          : {benchmark.returns().vbt.returns.sharpe_ratio():.2f}')
     print(f'Benchmark Sortino Ratio          : {benchmark.returns().vbt.returns.sortino_ratio():.2f}')
         
-        # --- compute rolling volatility (annualized) ---
     roll_window = 30
-    ret_strat = pfs.returns()              # Series/DataFrame of strategy returns
-    ret_bench = benchmark.returns()        # Series/DataFrame of benchmark returns
-
-    # via QSAdapter
+    ret_strat = pfs.returns()
+    ret_bench = benchmark.returns()
+    
     vol_strat = ret_strat.vbt.returns.qs.rolling_volatility(window=roll_window)
     vol_bench = ret_bench.vbt.returns.qs.rolling_volatility(window=roll_window)
 
-    # align indices for plotting (optional but tidy)
     vol = pd.concat(
         {'Strategy': vol_strat, 'Benchmark': vol_bench},
         axis=1
     ).dropna()
 
-    # --- plots ---
     fig, (ax, ax2) = plt.subplots(
         2, 1, figsize=(12, 8), sharex=True,
         gridspec_kw={'height_ratios': [2, 1]}
     )
 
-    # Top: price/equity curves
     ax.plot(spx.index, spx.values, label='SPX', linewidth=2, alpha=0.7)
     ax.plot(cumulative_values.index, cumulative_values.values, label='WFO Ensemble Strategy', linewidth=2)
     ax.set_title('Walk-Forward Optimization Ensemble Performance (Continuous Out-of-Sample)', fontsize=14)
@@ -183,7 +180,6 @@ def analyze_wfo(run_id):
     ax.legend()
     ax.set_yscale('log')
 
-    # Bottom: rolling vol
     ax2.plot(vol.index, vol['Benchmark'], label=f'Benchmark {roll_window}-day Rolling Vol', linewidth=1.8, alpha=0.9)
     ax2.plot(vol.index, vol['Strategy'],  label=f'Strategy {roll_window}-day Rolling Vol',  linewidth=1.8, alpha=0.9)
     ax2.set_ylabel('Annualized Volatility')
@@ -480,18 +476,92 @@ def analyze_probability_of_outperformance(run_ids):
     print(f'a total of {negative_count} periods out of {len(results)} were negative, with the worst being {worst}')
        
 def analyse_gameplan(run_ids):
-
     engine = create_engine()
     
-    results = []
-    strategies = connect(engine, 'wfo_strategy')
-    results = strategies.loc[strategies['run_id'].isin(run_ids), 'pos_sizing'].str[0].to_numpy()
-        
-    mean = np.mean(results)
-    median = np.median(results)
-    max = np.max(results)
-    print(f'median base holdings is {median} while mean is {mean}')
-    print(f'max is {max}')
+    # per_period grabs average base holding per period
+    # events joins the start and end date of each period, defining start as new adds and end as new subtracts
+    # daily events groups the events with the same dates
+    # cum adds up their effects
+    # spans links each date with the next date where things happen
+    # and the final SELECT creates the date series that gives you your final average base holdings over time
+    sql = text('''
+        WITH per_period AS ( 
+            SELECT
+                s.run_id,
+                s.period_id,
+                SUM(s.pos_sizing[1]::float) AS base_sum,
+                COUNT(*)                      AS base_cnt
+            FROM wfo_strategy s
+            WHERE s.run_id = ANY(:run_ids)
+            GROUP BY s.run_id, s.period_id
+            ),
+            ranges AS (
+            SELECT
+                pp.run_id, pp.period_id, pp.base_sum, pp.base_cnt,
+                (ps.in_sample_end + INTERVAL '1 day')::date AS active_start,
+                ps.out_sample_end::date                      AS active_end
+            FROM per_period pp
+            JOIN wfo_period_summary ps
+                ON ps.run_id = pp.run_id AND ps.period_id = pp.period_id
+            ),
+            events AS (
+            SELECT run_id AS run, active_start AS dt,  base_sum AS dsum,  base_cnt AS dcnt FROM ranges
+            UNION ALL
+            SELECT run_id AS run, (active_end + INTERVAL '1 day')::date, -base_sum, -base_cnt FROM ranges
+            ),
+            daily_events AS (
+            SELECT run, dt::date AS dt, SUM(dsum) AS dsum, SUM(dcnt) AS dcnt
+            FROM events
+            GROUP BY run, dt
+            ),
+            cum AS (
+            SELECT
+                run, 
+                dt,
+                SUM(dsum) OVER (ORDER BY dt ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS sum_active,
+                SUM(dcnt) OVER (ORDER BY dt ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cnt_active
+            FROM daily_events
+            ),
+            spans AS (
+            SELECT
+                run,
+                dt AS start_dt,
+                LEAD(dt) OVER (PARTITION BY run ORDER BY dt) AS next_dt,
+                sum_active, cnt_active
+            FROM cum
+            )
+            SELECT 
+                run, 
+                gs::date AS dt,
+                (sum_active / NULLIF(cnt_active, 0)) AS avg_base_hold
+                FROM spans
+            JOIN LATERAL generate_series(start_dt, COALESCE(next_dt - INTERVAL '1 day', start_dt), INTERVAL '1 day') gs ON TRUE
+            WHERE cnt_active > 0
+            ORDER BY run, dt;
+            ''')
+    
+    result = []
+    with engine.connect() as conn:
+        result = conn.execute(sql, {'run_ids': run_ids})
+    
+    df = pd.DataFrame(list(result), columns=['run', 'dt', 'avg_base_hold'])
+    df = df.sort_values(['run', 'dt'])
+
+    plt.figure()
+    
+    # groupby returns (run, group)
+    for _, group in df.groupby('run'):
+        plt.plot(group['dt'], group['avg_base_hold'], alpha=0.2, linewidth=1)
+    
+    df_total = df.groupby('dt', as_index=False)['avg_base_hold'].mean()
+    plt.plot(df_total['dt'], df_total['avg_base_hold'], color='black', linewidth=2.5, label='Mean')
+
+    plt.ylabel('Average Base Allocation')
+    plt.xlabel('Date')
+    plt.title('Average OOS Base Allocation over Time')
+    plt.legend()    
+    plt.grid(True)
+    plt.show()
 
 def analyse_rsi(run_ids):
     
@@ -527,5 +597,13 @@ def analyze(csv_file):
 
     t_stat, p_val = stats.ttest_1samp(results['alpha_ann'], 0)
 
-    print("t-statistic:", t_stat)
-    print("p-value:", p_val)
+    print('t-statistic:', t_stat)
+    print('p-value:', p_val)
+    
+def list_run_ids():
+    import pandas as pd
+    from engine import create_engine
+    engine = create_engine()
+    run = pd.read_sql(f'SELECT run_id FROM wfo_run ORDER BY run_id ASC;', engine)
+    print(run)
+    return run['run_id'].tolist()

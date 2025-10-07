@@ -44,7 +44,7 @@ wfo_strategy = Table(
     'wfo_strategy', metadata,
     Column('strategy_id',       Integer,        primary_key=True,   autoincrement=True),
     Column('run_id',            Integer,        ForeignKey('wfo_run.run_id', ondelete='CASCADE'), nullable=False),
-    Column('period_id',         Integer,        nullable=False),
+    Column('period_id',         Integer,        ForeignKey('wfo_period_summary.period_id', ondelete='CASCADE'), nullable=False),
     Column('window',            Integer,        nullable=False),
     Column('entry',             Integer,        nullable=False),
     Column('exit',              Integer,        nullable=False),
@@ -173,8 +173,8 @@ CREATE TABLE wfo_period_summary (
 # one row per strategy in each ensemble
 CREATE TABLE wfo_strategy (
     strategy_id     SERIAL    PRIMARY KEY,
-    run_id          INT       NOT NULL,
-    period_id       INT       NOT NULL,
+    run_id          INT       NOT NULL  REFERENCES wfo_run(run_id),
+    period_id       INT       NOT NULL  REFERENCES wfo_period_summary(period_id),
     window          INT       NOT NULL,
     entry           INT       NOT NULL,
     exit            INT       NOT NULL,
