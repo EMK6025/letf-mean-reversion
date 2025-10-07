@@ -4,7 +4,7 @@ def wfo():
     from wfo import walk_forward_optimization
     from fitness import FitnessConfig
     import traceback
-    start_date = '1991-01-01'
+    start_date = '1990-01-01'
     end_date = '2024-12-31'
     
     custom_config = FitnessConfig(
@@ -45,11 +45,8 @@ def fit():
     analyze_fit()
     
 def list_runs():
-    import pandas as pd
-    from engine import create_engine
-    engine = create_engine()
-    run = pd.read_sql(f'SELECT run_id FROM wfo_run ORDER BY run_id ASC;', engine)
-    print(run)
+    from backtest_analysis import list_run_ids
+    return list_run_ids()
     
 def reset_wfo():
     from engine import create_engine
@@ -72,4 +69,32 @@ def alpha(run_ids):
     analyze_probability_of_outperformance(run_ids)
     
 if __name__ == '__main__':
-    alpha_all()
+    # import pandas as pd
+    # from engine import create_engine
+    # engine = create_engine()
+    # with pd.option_context(
+    #     'display.max_rows', None,
+    #     'display.max_columns', None,
+    #     'display.width', None,
+    #     'display.max_colwidth', None
+    # ):
+    #     run = pd.read_sql(f'SELECT * FROM wfo_strategy WHERE run_id = 35 ORDER BY pos_sizing DESC;', engine)
+    #     print(run.head())
+
+    # alpha_all()
+    # from backtest_analysis import analyze
+    # analyze('stressed_backtest_results.csv')
+    
+    # alpha(run_ids)
+    # print(runs.iloc[0]['run_id'])
+    # x = [35, 36, 37, 38, 40, 41, 43, 44, 45]
+    # from backtest_analysis import analyse_rsi
+    # analyse_rsi(x)
+    # from backtest_analysis import analyze_probability_of_outperformance
+    # analyze_probability_of_outperformance(x)
+    # wfo()
+    # clear_runs([59])
+    run_ids = list_runs()
+    from backtest_analysis import analyse_gameplan
+    analyse_gameplan(run_ids)
+    # analyze()
