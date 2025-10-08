@@ -12,6 +12,10 @@ def rebuild_performance(run_id):
     from backtest import run, Params
     engine = create_engine()
     runs = pd.read_sql(f'SELECT * FROM wfo_run WHERE run_id = {run_id} LIMIT 1', engine)
+    
+    if runs.empty:
+        print(f'Run with run_id = {run_id} does not exist in the database.')
+        return None, None, None
     periods = pd.read_sql(f'SELECT * FROM wfo_period_summary WHERE run_id = {run_id}', engine)
     
     strategies = connect(engine, 'wfo_strategy')
@@ -547,21 +551,7 @@ def analyse_gameplan(run_ids):
     df = pd.DataFrame(list(result), columns=['run', 'dt', 'avg_base_hold'])
     df = df.sort_values(['run', 'dt'])
 
-    plt.figure()
-    
-    # groupby returns (run, group)
-    for _, group in df.groupby('run'):
-        plt.plot(group['dt'], group['avg_base_hold'], alpha=0.2, linewidth=1)
-    
-    df_total = df.groupby('dt', as_index=False)['avg_base_hold'].mean()
-    plt.plot(df_total['dt'], df_total['avg_base_hold'], color='black', linewidth=2.5, label='Mean')
-
-    plt.ylabel('Average Base Allocation')
-    plt.xlabel('Date')
-    plt.title('Average OOS Base Allocation over Time')
-    plt.legend()    
-    plt.grid(True)
-    plt.show()
+    return df
 
 def analyse_rsi(run_ids):
     
@@ -605,5 +595,17 @@ def list_run_ids():
     from engine import create_engine
     engine = create_engine()
     run = pd.read_sql(f'SELECT run_id FROM wfo_run ORDER BY run_id ASC;', engine)
-    print(run)
-    return run['run_id'].tolist()
+    return run['run_id']
+
+def gen_performance(run_ids):
+
+    df = pd.DataFrame()
+    for run_id in run_ids:
+        cumulative_values, _, _ = rebuild_performance(run_id)
+        cumulative_values.name = f'run {run_id}'    
+        df = pd.concat([df, cumulative_values], axis=1)
+        print(f'run {run_id} processed')
+    
+    df.index = pd.to_datetime(df.index).normalize()
+    
+    return df

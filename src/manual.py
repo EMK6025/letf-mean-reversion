@@ -44,9 +44,15 @@ def fit():
     from backtest_analysis import analyze_fit
     analyze_fit()
     
+def grab_runs():
+    from backtest_analysis import list_run_ids
+    return list_run_ids().tolist()
+
 def list_runs():
     from backtest_analysis import list_run_ids
-    return list_run_ids()
+    runs = list_run_ids()
+    print(run)
+    return list_run_ids().tolist()
     
 def reset_wfo():
     from engine import create_engine
@@ -67,34 +73,49 @@ def alpha_all():
 def alpha(run_ids):
     from backtest_analysis import analyze_probability_of_outperformance
     analyze_probability_of_outperformance(run_ids)
+
+def graph_base_holdings(run_ids):
+    from backtest_analysis import analyse_gameplan
+    import matplotlib.pyplot as plt
+    plt.figure()
+    df = analyse_gameplan(run_ids)
+    # groupby returns (run, group)
+    for _, group in df.groupby('run'):
+        plt.plot(group['dt'], group['avg_base_hold'], alpha=0.35, linewidth=1)
+    
+    df_total = df.groupby('dt', as_index=False)['avg_base_hold'].mean()
+    plt.plot(df_total['dt'], df_total['avg_base_hold'], color='black', linewidth=1.0, label='Mean')
+
+    plt.ylabel('Average Base Allocation')
+    plt.xlabel('Date')
+    plt.title('Average OOS Base Allocation over Time')
+    plt.legend()    
+    plt.grid(True)
+    plt.show()
+    
+def graph_performance(run_ids):
+    from backtest_analysis import gen_performance
+    from engine import create_engine, connect_time_series
+    import matplotlib.pyplot as plt
+    df = gen_performance(run_ids)
+    
+    engine = create_engine()
+    data = connect_time_series(engine, 'test_data')
+        
+    spx = data['SPX Close'].rename('SPX').reindex(df.index).dropna()
+    
+    plt.figure()
+    for col in df:
+        plt.plot(df.index, df[col], alpha=0.35, linewidth=1)
+
+    plt.plot(df.index, spx, alpha=1.0, color='black', linewidth=1.0, label = 'SPX')
+    
+    plt.xlabel('Date')
+    plt.ylabel('Portfolio Value')
+    plt.title('OOS Performance versus SPX')
+    plt.legend()    
+    plt.grid(True)
+    plt.show()
     
 if __name__ == '__main__':
-    # import pandas as pd
-    # from engine import create_engine
-    # engine = create_engine()
-    # with pd.option_context(
-    #     'display.max_rows', None,
-    #     'display.max_columns', None,
-    #     'display.width', None,
-    #     'display.max_colwidth', None
-    # ):
-    #     run = pd.read_sql(f'SELECT * FROM wfo_strategy WHERE run_id = 35 ORDER BY pos_sizing DESC;', engine)
-    #     print(run.head())
-
-    # alpha_all()
-    # from backtest_analysis import analyze
-    # analyze('stressed_backtest_results.csv')
-    
-    # alpha(run_ids)
-    # print(runs.iloc[0]['run_id'])
-    # x = [35, 36, 37, 38, 40, 41, 43, 44, 45]
-    # from backtest_analysis import analyse_rsi
-    # analyse_rsi(x)
-    # from backtest_analysis import analyze_probability_of_outperformance
-    # analyze_probability_of_outperformance(x)
-    # wfo()
-    # clear_runs([59])
-    run_ids = list_runs()
-    from backtest_analysis import analyse_gameplan
-    analyse_gameplan(run_ids)
-    # analyze()
+    list_runs()
