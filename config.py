@@ -23,6 +23,9 @@ import pandas as pd
 username = 'username'
 password = 'password'
 
+def create_engine():
+    return _sa_create_engine(f'postgresql+psycopg://{username}:{password}@localhost:5432/letf_data')
+
 def connect_time_series(engine, table_name = 'test_data'):
     df = connect(engine, table_name)
     df['Date'] = pd.to_datetime(df['Date'])
@@ -230,7 +233,7 @@ def main():
     validator = SetupValidator()
     success, main_location = validator.run_validation()
     
-    # Handle installation of missing packages
+    # Handle missing packages
     if not success and validator.errors:
         missing_packages = [err for err in validator.errors if 'is not installed' in err]
         if missing_packages:
@@ -266,7 +269,6 @@ def main():
                 print('\n\n main.py interrupted by user')
                 sys.exit(0)
     
-    # Exit with appropriate code
     if not success:
         sys.exit(1)
 

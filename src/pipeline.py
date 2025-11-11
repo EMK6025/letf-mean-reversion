@@ -5,11 +5,22 @@ def wfo():
     from wfo import walk_forward_optimization
     from fitness import FitnessConfig
     import traceback
-    start_date = '1990-01-01'
-    end_date = '2024-12-31'
     
-    # set random seed
-    random.seed(2025)
+    '''
+    Set your parameters
+    '''
+    start_date = '1990-01-01'   # when the first in-sample period should start
+    end_date = '2024-12-31'     # when the last out-of-sample period should end
+    random.seed(2025)           # random seed 
+    run_count = 5               # how many seeds to backtest on
+    in_sample_months = 60       # length of the in-sample period per window 
+    out_sample_months = 6       # length of the out-of-sample period per window
+    max_time_minutes = 10       # hard cap on how long processing for each window will take
+    stall_generations = 10      # number of generations without progress to end the training period
+    max_generations = 1000      # maximum number of generations for each window
+    pop_size = 1000             # population size per generation
+    n_ensemble = 50             # size of the ensemble strategy to test
+    leverage = 3                # leverage to use, integer from 1 to 4
     
     custom_config = FitnessConfig(
         selected_metrics=['sortino', 'drawdown', 'annual_return', 'var'],
@@ -17,19 +28,19 @@ def wfo():
         bottom_percentile=10.0
     )
     
-    for _ in range(0,25):
+    for _ in range(0, run_count):
         try:
             walk_forward_optimization(
                 start_date=start_date,
                 end_date=end_date,  
-                in_sample_months=60,
-                out_sample_months=6,
-                max_time_minutes=1000,
-                stall_generations=10,
-                max_generations=1000,
-                pop_size=1000,
-                n_ensemble=50,
-                leverage=3,
+                in_sample_months=in_sample_months,
+                out_sample_months=out_sample_months,
+                max_time_minutes=max_time_minutes,
+                stall_generations=stall_generations,
+                max_generations=max_generations,
+                pop_size=pop_size,
+                n_ensemble=n_ensemble,
+                leverage=leverage,
                 fitness_config=custom_config,
                 rand_seed = random.randint(1, 10000)
             )
