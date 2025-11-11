@@ -7,3 +7,4 @@ UPRO-historical_nav.csv
 
 wfo_analysis.png
 __pycache__
+*.sql
